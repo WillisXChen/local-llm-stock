@@ -1,0 +1,193 @@
+# ============================================================
+#  Local LLM Stack — 48GB GPU Edition
+#  Services: Ollama + LiteLLM Proxy + Open WebUI (UI管理)
+#  VSCode Claude Code 透過 LiteLLM 串接本地模型
+# ============================================================
+
+services:
+
+  # ── Ollama：本地模型推理引擎 ──────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-4h}     # 模型在 VRAM 中保留時間（多人時縮短以釋放 VRAM）
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED:-2} # 同時載入模型數量（多人時限制避免 OOM）
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}   # 並行請求數（5+ 人建議 4-6）
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - llm-net
+
+  # ── LiteLLM Proxy：Anthropic API 格式轉換層 ──────────────
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm
+    restart: unless-stopped
+    ports:
+      - "${LITELLM_PORT:-4000}:4000"
+    volumes:
+      - ./config/litellm_config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--detailed_debug"]
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-placeholder}      # 可選：備援用 OpenAI
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-placeholder} # 可選：備援用 Anthropic Cloud
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - llm-net
+
+  # ── Open WebUI：模型管理 Web 介面（可選）─────────────────
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT:-8080}:8080"
+    volumes:
+      - webui_data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      - WEBUI_AUTH=true                     # 啟用登入驗證
+      - DEFAULT_USER_ROLE=user
+    depends_on:
+      - ollama
+    networks:
+      - llm-net
+
+  # ── Nginx SSL 反向代理（內部部署可略過）─────────────────────
+  # 若需要 HTTPS，取消下方註解並執行 ./scripts/generate_ssl.sh
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: nginx-ssl
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #     - "8443:8443"
+  #   volumes:
+  #     - ./config/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - litellm
+  #     - open-webui
+  #   networks:
+  #     - llm-net
+
+  # ── Qdrant：向量資料庫（RAG 用）───────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - llm-net
+
+  # ── RAG Proxy：在 Claude Code 與 LiteLLM 之間注入向量搜尋 ─
+  # 支援 API Key 驗證 + per-project collection 隔離 + GPU 請求排隊
+  rag-proxy:
+    build: ./services/rag-proxy
+    container_name: rag-proxy
+    restart: unless-stopped
+    ports:
+      - "${RAG_PROXY_PORT:-4001}:4001"
+    volumes:
+      - ./config/api_keys.json:/app/config/api_keys.json:ro
+    environment:
+      - LITELLM_URL=http://litellm:4000
+      - QDRANT_URL=http://qdrant:6333
+      - OLLAMA_URL=http://ollama:11434
+      - EMBED_MODEL=${EMBED_MODEL:-nomic-embed-text}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-codebase}
+      - QDRANT_COLLECTION_PREFIX=${QDRANT_COLLECTION_PREFIX:-codebase}
+      - RAG_TOP_K=${RAG_TOP_K:-5}
+      - RAG_MIN_SCORE=${RAG_MIN_SCORE:-0.3}
+      - RAG_ENABLED=${RAG_ENABLED:-true}
+      # ── Auth：API Key 驗證 ──
+      - AUTH_ENABLED=${AUTH_ENABLED:-true}                     # 設 false 可關閉驗證
+      - API_KEYS_FILE=/app/config/api_keys.json
+      # ── GPU Queue：多人共用時的排隊機制 ──
+      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS:-3}  # 同時推理上限
+      - QUEUE_TIMEOUT=${QUEUE_TIMEOUT:-300}                    # 排隊逾時(秒)
+    depends_on:
+      litellm:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - llm-net
+
+  # ── Model Puller：自動拉取預設模型（一次性服務）─────────
+  model-puller:
+    image: ollama/ollama:latest
+    container_name: model-puller
+    restart: "no"                           # 只執行一次
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./scripts/pull_models.sh:/pull_models.sh:ro
+    entrypoint: ["/bin/bash", "/pull_models.sh"]
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - llm-net
+
+# ── Volumes ─────────────────────────────────────────────────
+volumes:
+  ollama_data:
+    name: ollama_models_data
+  webui_data:
+    name: open_webui_data
+  qdrant_data:
+    name: qdrant_vector_data
+
+# ── Networks ─────────────────────────────────────────────────
+networks:
+  llm-net:
+    name: local_llm_network
+    driver: bridge

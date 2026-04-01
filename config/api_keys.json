@@ -1,0 +1,17 @@
+{
+  "_comment": "RAG Proxy API Keys — 每位團隊成員一把 key，用於身份驗證與自動路由",
+  "_usage": "在 VSCode settings 中設定 X-API-Key header 即可使用",
+  "_generate": "產生新 key: python3 -c \"import secrets; print(secrets.token_urlsafe(32))\"",
+  "keys": {
+    "rag-EXAMPLE-change-me-willis": {
+      "user_id": "willis",
+      "project_id": "xse-apps",
+      "enabled": true
+    },
+    "rag-EXAMPLE-change-me-dev2": {
+      "user_id": "dev2",
+      "project_id": "xse-api",
+      "enabled": true
+    }
+  }
+}

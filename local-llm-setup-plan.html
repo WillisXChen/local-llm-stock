@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>本地 LLM 整體規劃 — 48GB GPU</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #161b27;
+    --bg3: #1e2535;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --text3: #64748b;
+    --green: #22d3a0;
+    --green-dim: rgba(34,211,160,0.12);
+    --blue: #60a5fa;
+    --blue-dim: rgba(96,165,250,0.12);
+    --purple: #a78bfa;
+    --purple-dim: rgba(167,139,250,0.12);
+    --amber: #fbbf24;
+    --amber-dim: rgba(251,191,36,0.12);
+    --red: #f87171;
+    --red-dim: rgba(248,113,113,0.1);
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.6; }
+
+  /* Layout */
+  .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+  /* Header */
+  .header { margin-bottom: 40px; }
+  .header-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--green-dim); border: 1px solid rgba(34,211,160,0.25); color: var(--green); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; margin-bottom: 16px; }
+  .header h1 { font-size: 28px; font-weight: 700; color: #fff; line-height: 1.2; margin-bottom: 10px; }
+  .header p { color: var(--text2); font-size: 15px; max-width: 600px; }
+  .hw-chips { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  .hw-chip { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 500; }
+  .hw-chip .icon { width: 16px; height: 16px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+  .chip-gpu { color: var(--green); }
+  .chip-ram { color: var(--blue); }
+  .chip-os  { color: var(--purple); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 2px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin-bottom: 28px; overflow-x: auto; }
+  .tab { flex-shrink: 0; padding: 8px 18px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text2); border: none; background: transparent; transition: all .15s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--bg3); color: #fff; border: 1px solid var(--border2); }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* Section titles */
+  .section-title { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); margin-bottom: 12px; }
+
+  /* Architecture diagram */
+  .arch { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 28px; margin-bottom: 28px; }
+  .arch-flow { display: flex; align-items: center; gap: 0; overflow-x: auto; padding-bottom: 4px; }
+  .arch-box { flex-shrink: 0; background: var(--bg3); border: 1px solid var(--border2); border-radius: 10px; padding: 14px 18px; text-align: center; min-width: 130px; }
+  .arch-box .label { font-size: 12px; font-weight: 600; color: #fff; margin-bottom: 4px; }
+  .arch-box .sub { font-size: 11px; color: var(--text2); }
+  .arch-box.highlight { border-color: rgba(34,211,160,0.4); background: rgba(34,211,160,0.06); }
+  .arch-arrow { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; padding: 0 8px; }
+  .arch-arrow .line { width: 32px; height: 1.5px; background: var(--border2); position: relative; }
+  .arch-arrow .line::after { content:''; position:absolute; right:-5px; top:-4px; width:0; height:0; border-left: 7px solid var(--border2); border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; }
+  .arch-arrow .lbl { font-size: 10px; color: var(--text3); margin-top: 4px; white-space: nowrap; }
+  .arch-note { margin-top: 16px; padding: 12px 16px; background: var(--amber-dim); border: 1px solid rgba(251,191,36,0.2); border-radius: 8px; font-size: 12px; color: var(--amber); }
+
+  /* VRAM bar */
+  .vram-bar-wrap { margin-bottom: 20px; }
+  .vram-bar-header { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; }
+  .vram-bar-track { height: 8px; background: var(--bg3); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+  .vram-bar-fill { height: 100%; border-radius: 4px; transition: width .4s; }
+
+  /* Model cards */
+  .model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .model-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 16px; transition: border-color .15s; position: relative; overflow: hidden; }
+  .model-card:hover { border-color: var(--border2); }
+  .model-card.featured { border-color: rgba(34,211,160,0.35); }
+  .model-card.featured::before { content: '推薦'; position: absolute; top: 12px; right: 12px; font-size: 10px; font-weight: 700; letter-spacing: .06em; background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,211,160,0.3); padding: 2px 8px; border-radius: 10px; }
+  .model-header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+  .model-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+  .icon-nvidia { background: rgba(118,185,0,0.15); }
+  .icon-google { background: rgba(66,133,244,0.15); }
+  .model-name { font-weight: 600; color: #fff; font-size: 14px; font-family: var(--mono); }
+  .model-desc { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .model-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .tag { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 8px; }
+  .tag-coding { background: var(--blue-dim); color: var(--blue); }
+  .tag-reason { background: var(--purple-dim); color: var(--purple); }
+  .tag-agent  { background: var(--green-dim); color: var(--green); }
+  .tag-fast   { background: var(--amber-dim); color: var(--amber); }
+  .tag-multimodal { background: rgba(244,114,182,0.12); color: #f472b6; }
+  .model-specs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .spec { background: var(--bg3); border-radius: 6px; padding: 6px 10px; }
+  .spec .k { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; }
+  .spec .v { font-size: 12px; font-weight: 600; margin-top: 1px; color: var(--text); }
+  .spec .v.green { color: var(--green); }
+  .spec .v.blue  { color: var(--blue); }
+  .spec .v.amber { color: var(--amber); }
+
+  /* VRAM usage multi-model */
+  .combo-section { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .combo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-top: 12px; }
+  .combo-card { background: var(--bg3); border-radius: 8px; padding: 12px 14px; border: 1px solid var(--border); }
+  .combo-title { font-size: 12px; font-weight: 600; color: #fff; margin-bottom: 6px; }
+  .combo-items { font-size: 11px; color: var(--text2); margin-bottom: 8px; font-family: var(--mono); }
+  .combo-bar-wrap { }
+  .combo-bar-track { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+  .combo-bar-fill { height: 100%; border-radius: 3px; }
+  .combo-pct { font-size: 10px; color: var(--text3); margin-top: 3px; }
+
+  /* Code blocks */
+  .code-block { background: #0d1117; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
+  .code-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: var(--bg3); border-bottom: 1px solid var(--border); }
+  .code-filename { font-size: 12px; font-weight: 600; color: var(--text2); font-family: var(--mono); }
+  .copy-btn { font-size: 11px; color: var(--text3); cursor: pointer; background: var(--bg); border: 1px solid var(--border); padding: 3px 10px; border-radius: 5px; transition: all .15s; }
+  .copy-btn:hover { color: var(--text); border-color: var(--border2); }
+  .copy-btn.copied { color: var(--green); border-color: rgba(34,211,160,0.3); }
+  pre { padding: 20px; font-size: 12px; font-family: var(--mono); line-height: 1.7; overflow-x: auto; color: #cdd9e5; }
+  .kw { color: #f47067; }
+  .str { color: #96d0ff; }
+  .comment { color: #637183; font-style: italic; }
+  .key { color: #dcbdfb; }
+  .val { color: #6bc46d; }
+  .num { color: #6bc46d; }
+
+  /* Command list */
+  .cmd-list { display: flex; flex-direction: column; gap: 12px; }
+  .cmd-item { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .cmd-step { display: flex; gap: 12px; align-items: flex-start; }
+  .step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--green-dim); border: 1px solid rgba(34,211,160,0.3); color: var(--green); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .cmd-content .title { font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px; }
+  .cmd-content .desc { font-size: 12px; color: var(--text2); margin-bottom: 8px; }
+  .cmd-content code { font-family: var(--mono); font-size: 12px; background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: block; color: var(--green); cursor: pointer; transition: border-color .15s; }
+  .cmd-content code:hover { border-color: rgba(34,211,160,0.3); }
+
+  /* Divider */
+  .divider { height: 1px; background: var(--border); margin: 24px 0; }
+
+  /* Alert */
+  .alert { display: flex; gap: 10px; padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+  .alert-info { background: var(--blue-dim); border: 1px solid rgba(96,165,250,0.2); color: var(--blue); }
+  .alert-success { background: var(--green-dim); border: 1px solid rgba(34,211,160,0.2); color: var(--green); }
+
+  /* Responsive */
+  @media(max-width:600px){
+    .arch-flow { flex-direction: column; align-items: stretch; }
+    .arch-arrow { transform: rotate(90deg); margin: 4px auto; }
+    .model-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-badge">🛠 Local LLM 整體規劃</div>
+    <h1>VSCode Claude Code ✕ 本地 LLM<br>完整部署方案</h1>
+    <p>以下規劃針對你的硬體配置，選出最適合程式開發的 NVIDIA Nemotron + Google Gemma 模型，並建立可自由切換的多模型環境。</p>
+    <div class="hw-chips">
+      <div class="hw-chip chip-gpu">
+        <div class="icon" style="background:rgba(118,185,0,0.2);color:#76b900;">N</div>
+        NVIDIA GPU — 48 GB VRAM
+      </div>
+      <div class="hw-chip chip-ram">
+        <div class="icon" style="background:var(--blue-dim);color:var(--blue);">M</div>
+        系統記憶體 — 64 GB RAM
+      </div>
+      <div class="hw-chip chip-os">
+        <div class="icon" style="background:var(--purple-dim);color:var(--purple);">⚙</div>
+        同時跑多模型：最高可用 ~40GB
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('arch')">🏗 架構總覽</button>
+    <button class="tab" onclick="switchTab('models')">🤖 模型清單</button>
+    <button class="tab" onclick="switchTab('multi')">⚡ 多模型組合</button>
+    <button class="tab" onclick="switchTab('config')">📄 設定檔</button>
+    <button class="tab" onclick="switchTab('cmds')">🚀 快速指令</button>
+  </div>
+
+  <!-- Panel: 架構 -->
+  <div id="panel-arch" class="panel active">
+    <div class="arch">
+      <div class="section-title">系統架構流程</div>
+      <div class="arch-flow">
+        <div class="arch-box highlight">
+          <div class="label">VSCode</div>
+          <div class="sub">Claude Code Plugin</div>
+        </div>
+        <div class="arch-arrow">
+          <div class="line"></div>
+          <div class="lbl">Anthropic API 格式</div>
+        </div>
+        <div class="arch-box highlight">
+          <div class="label">LiteLLM Proxy</div>
+          <div class="sub">localhost:4000</div>
+        </div>
+        <div class="arch-arrow">
+          <div class="line"></div>
+          <div class="lbl">Ollama API</div>
+        </div>
+        <div class="arch-box">
+          <div class="label">Ollama</div>
+          <div class="sub">localhost:11434</div>
+        </div>
+        <div class="arch-arrow">
+          <div class="line"></div>
+          <div class="lbl">本地推理</div>
+        </div>
+        <div class="arch-box">
+          <div class="label">GPU Models</div>
+          <div class="sub">Nemotron / Gemma</div>
+        </div>
+      </div>
+      <div class="arch-note">
+        💡 LiteLLM Proxy 是核心橋接層，負責把 Claude Code 送出的 Anthropic API 格式請求，轉換成各本地模型可接受的格式。切換模型只需改 API Key 或 model name，不需重啟 VSCode。
+      </div>
+    </div>
+
+    <div class="arch">
+      <div class="section-title">VRAM 使用估算（48 GB）</div>
+      <div class="vram-bar-wrap" style="margin-bottom:16px;">
+        <div class="vram-bar-header"><span style="color:var(--text2)">可用 VRAM</span><span style="color:var(--green);font-weight:600">48 GB</span></div>
+        <div class="vram-bar-track"><div class="vram-bar-fill" style="width:100%;background:linear-gradient(90deg,#22d3a0,#60a5fa);"></div></div>
+      </div>
+      <div id="vram-models">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel: 模型清單 -->
+  <div id="panel-models" class="panel">
+    <div class="alert alert-success">✅ 以下所有模型均可在你的 48 GB VRAM 上順暢運行，標記「推薦」的是最適合日常程式開發的選擇。</div>
+
+    <div class="section-title" style="margin-bottom:16px;">NVIDIA Nemotron 系列</div>
+    <div class="model-grid" id="nvidia-models"></div>
+
+    <div class="divider"></div>
+
+    <div class="section-title" style="margin-bottom:16px;">Google Gemma / CodeGemma 系列</div>
+    <div class="model-grid" id="google-models"></div>
+  </div>
+
+  <!-- Panel: 多模型組合 -->
+  <div id="panel-multi" class="panel">
+    <div class="alert alert-info">⚡ 48 GB VRAM 讓你可以同時載入多個模型，依任務自動路由，零切換延遲。</div>
+    <div class="combo-section">
+      <div class="section-title">推薦組合方案</div>
+      <div class="combo-grid" id="combo-grid"></div>
+    </div>
+    <div class="alert alert-success" style="margin-top:4px;">💡 在 LiteLLM 設定多個 model entry，Claude Code 就能用不同的 model name 呼叫不同模型，不需重新載入。</div>
+  </div>
+
+  <!-- Panel: 設定檔 -->
+  <div id="panel-config" class="panel">
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-filename">litellm_config.yaml</span>
+        <button class="copy-btn" onclick="copyCode('litellm-config', this)">複製</button>
+      </div>
+      <pre id="litellm-config"><span class="comment"># LiteLLM Proxy 設定 — 48GB GPU 完整版</span>
+<span class="comment"># 支援 NVIDIA Nemotron + Google Gemma 模型自由切換</span>
+
+<span class="key">model_list</span>:
+
+  <span class="comment"># ─── NVIDIA Nemotron 系列 ────────────────────────────────</span>
+
+  <span class="comment"># 日常快速 coding（3.6B active，約 6GB VRAM）</span>
+  - <span class="key">model_name</span>: <span class="str">nemotron-nano</span>
+    <span class="key">litellm_params</span>:
+      <span class="key">model</span>: <span class="str">ollama/nemotron-3-nano</span>
+      <span class="key">api_base</span>: <span class="str">http://localhost:11434</span>
+
+  <span class="comment"># 主力開發 / 複雜任務（12B active，約 16GB VRAM）⭐ 推薦</span>
+  - <span class="key">model_name</span>: <span class="str">nemotron-super</span>
+    <span class="key">litellm_params</span>:
+      <span class="key">model</span>: <span class="str">ollama/nemotron-3-super</span>
+      <span class="key">api_base</span>: <span class="str">http://localhost:11434</span>
+
+  <span class="comment"># 旗艦通用（70B，約 40GB VRAM）</span>
+  - <span class="key">model_name</span>: <span class="str">nemotron-70b</span>
+    <span class="key">litellm_params</span>:
+      <span class="key">model</span>: <span class="str">ollama/nemotron</span>
+      <span class="key">api_base</span>: <span class="str">http://localhost:11434</span>
+
+  <span class="comment"># ─── Google Gemma / CodeGemma 系列 ──────────────────────</span>
+
+  <span class="comment"># 輕量快速補全（約 6GB VRAM）</span>
+  - <span class="key">model_name</span>: <span class="str">codegemma-7b</span>
+    <span class="key">litellm_params</span>:
+      <span class="key">model</span>: <span class="str">ollama/codegemma:7b</span>
+      <span class="key">api_base</span>: <span class="str">http://localhost:11434</span>
+
+  <span class="comment"># 平衡 coding + 解釋（約 8GB VRAM）⭐ 推薦</span>
+  - <span class="key">model_name</span>: <span class="str">gemma2-9b</span>
+    <span class="key">litellm_params</span>:
+      <span class="key">model</span>: <span class="str">ollama/gemma2:9b</span>
+      <span class="key">api_base</span>: <span class="str">http://localhost:11434</span>
+
+  <span class="comment"># 高品質通用（約 18GB VRAM）⭐ 推薦</span>
+  - <span class="key">model_name</span>: <span class="str">gemma2-27b</span>
+    <span class="key">litellm_params</span>:
+      <span class="key">model</span>: <span class="str">ollama/gemma2:27b</span>
+      <span class="key">api_base</span>: <span class="str">http://localhost:11434</span>
+
+  <span class="comment"># ─── Claude Code 預設入口（對應最強 coding 模型）───────</span>
+  - <span class="key">model_name</span>: <span class="str">claude-sonnet-4-5</span>
+    <span class="key">litellm_params</span>:
+      <span class="key">model</span>: <span class="str">ollama/nemotron-3-super</span>
+      <span class="key">api_base</span>: <span class="str">http://localhost:11434</span>
+
+<span class="key">general_settings</span>:
+  <span class="key">master_key</span>: <span class="str">"sk-local-dev-2025"</span>
+  <span class="key">drop_params</span>: <span class="num">true</span>      <span class="comment"># 忽略 Anthropic 專屬參數，避免報錯</span>
+
+<span class="key">litellm_settings</span>:
+  <span class="key">set_verbose</span>: <span class="num">false</span>
+  <span class="key">request_timeout</span>: <span class="num">600</span>     <span class="comment"># 大模型 timeout 設長一點</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-filename">~/.zshrc 或 ~/.bashrc — 環境變數</span>
+        <button class="copy-btn" onclick="copyCode('env-vars', this)">複製</button>
+      </div>
+      <pre id="env-vars"><span class="comment"># ─── Claude Code 指向本地 LiteLLM Proxy ───────────────</span>
+<span class="kw">export</span> <span class="key">ANTHROPIC_BASE_URL</span>=<span class="str">"http://localhost:4000"</span>
+<span class="kw">export</span> <span class="key">ANTHROPIC_API_KEY</span>=<span class="str">"sk-local-dev-2025"</span>
+
+<span class="comment"># 套用設定</span>
+<span class="comment"># source ~/.zshrc</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-filename">docker-compose.yml — 一鍵啟動（推薦）</span>
+        <button class="copy-btn" onclick="copyCode('docker-compose', this)">複製</button>
+      </div>
+      <pre id="docker-compose"><span class="key">services</span>:
+
+  <span class="key">ollama</span>:
+    <span class="key">image</span>: <span class="str">ollama/ollama</span>
+    <span class="key">ports</span>:
+      - <span class="str">"11434:11434"</span>
+    <span class="key">volumes</span>:
+      - <span class="str">ollama_data:/root/.ollama</span>
+    <span class="key">deploy</span>:
+      <span class="key">resources</span>:
+        <span class="key">reservations</span>:
+          <span class="key">devices</span>:
+            - <span class="key">capabilities</span>: [<span class="str">gpu</span>]
+    <span class="key">restart</span>: <span class="str">unless-stopped</span>
+
+  <span class="key">litellm</span>:
+    <span class="key">image</span>: <span class="str">ghcr.io/berriai/litellm:main-latest</span>
+    <span class="key">ports</span>:
+      - <span class="str">"4000:4000"</span>
+    <span class="key">volumes</span>:
+      - <span class="str">./litellm_config.yaml:/app/config.yaml</span>
+    <span class="key">command</span>: [<span class="str">"--config"</span>, <span class="str">"/app/config.yaml"</span>, <span class="str">"--port"</span>, <span class="str">"4000"</span>]
+    <span class="key">depends_on</span>:
+      - <span class="str">ollama</span>
+    <span class="key">restart</span>: <span class="str">unless-stopped</span>
+
+<span class="key">volumes</span>:
+  <span class="key">ollama_data</span>:</pre>
+    </div>
+  </div>
+
+  <!-- Panel: 快速指令 -->
+  <div id="panel-cmds" class="panel">
+    <div class="cmd-list" id="cmd-list"></div>
+    <div class="divider"></div>
+    <div class="section-title">驗證測試</div>
+    <div class="code-block" style="margin-top:10px;">
+      <div class="code-header">
+        <span class="code-filename">測試 LiteLLM Proxy 是否正常</span>
+        <button class="copy-btn" onclick="copyCode('test-curl', this)">複製</button>
+      </div>
+      <pre id="test-curl"><span class="kw">curl</span> http://localhost:4000/v1/messages \
+  -H <span class="str">"x-api-key: sk-local-dev-2025"</span> \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "model": "nemotron-super",
+    "max_tokens": 100,
+    "messages": [{"role": "user", "content": "寫一個 hello world in Python"}]
+  }'</span></pre>
+    </div>
+  </div>
+
+</div><!-- end container -->
+
+<script>
+const MODELS_NVIDIA = [
+  {
+    name: "nemotron-3-nano",
+    title: "Nemotron 3 Nano",
+    desc: "MoE 架構，3.6B active，1M context，最省 VRAM",
+    icon: "N", iconClass: "icon-nvidia",
+    tags: ["coding","agent","fast"],
+    vram: 6, totalParams: "30B (MoE)", activeParams: "3.6B", context: "1M tokens",
+    speed: "⚡⚡⚡", quality: "⭐⭐⭐",
+    cmd: "ollama pull nemotron-3-nano",
+    featured: false
+  },
+  {
+    name: "nemotron-3-super",
+    title: "Nemotron 3 Super",
+    desc: "MoE 架構，12B active，複雜任務首選，多 Agent 設計",
+    icon: "N", iconClass: "icon-nvidia",
+    tags: ["coding","agent","reason"],
+    vram: 16, totalParams: "120B (MoE)", activeParams: "12B", context: "1M tokens",
+    speed: "⚡⚡", quality: "⭐⭐⭐⭐⭐",
+    cmd: "ollama pull nemotron-3-super",
+    featured: true
+  },
+  {
+    name: "nemotron (70B)",
+    title: "Llama-3.1-Nemotron-70B",
+    desc: "RLHF 強化的旗艦通用模型，指令遵循最強",
+    icon: "N", iconClass: "icon-nvidia",
+    tags: ["coding","reason","agent"],
+    vram: 40, totalParams: "70B", activeParams: "70B", context: "128K tokens",
+    speed: "⚡", quality: "⭐⭐⭐⭐⭐",
+    cmd: "ollama pull nemotron",
+    featured: false
+  },
+  {
+    name: "nemotron-nano-9b-v2",
+    title: "Nemotron Nano 9B v2",
+    desc: "Mamba-2 混合架構，輕量推理，128K context",
+    icon: "N", iconClass: "icon-nvidia",
+    tags: ["coding","fast","reason"],
+    vram: 8, totalParams: "9B", activeParams: "9B", context: "128K tokens",
+    speed: "⚡⚡⚡", quality: "⭐⭐⭐",
+    cmd: "# vLLM\nvllm serve nvidia/NVIDIA-Nemotron-Nano-9B-v2",
+    featured: false
+  }
+];
+
+const MODELS_GOOGLE = [
+  {
+    name: "codegemma:2b",
+    title: "CodeGemma 2B",
+    desc: "Google 出品，極輕量，適合行內補全，秒速回應",
+    icon: "G", iconClass: "icon-google",
+    tags: ["coding","fast"],
+    vram: 2, totalParams: "2B", activeParams: "2B", context: "8K tokens",
+    speed: "⚡⚡⚡", quality: "⭐⭐",
+    cmd: "ollama pull codegemma:2b",
+    featured: false
+  },
+  {
+    name: "codegemma:7b",
+    title: "CodeGemma 7B",
+    desc: "Google Coding 專用，Python/JS 優秀，FIM 補全強",
+    icon: "G", iconClass: "icon-google",
+    tags: ["coding","fast"],
+    vram: 6, totalParams: "7B", activeParams: "7B", context: "8K tokens",
+    speed: "⚡⚡⚡", quality: "⭐⭐⭐",
+    cmd: "ollama pull codegemma:7b",
+    featured: false
+  },
+  {
+    name: "gemma2:9b",
+    title: "Gemma 2 9B",
+    desc: "通用 + coding 平衡，適合程式解釋與文件撰寫",
+    icon: "G", iconClass: "icon-google",
+    tags: ["coding","fast"],
+    vram: 8, totalParams: "9B", activeParams: "9B", context: "8K tokens",
+    speed: "⚡⚡", quality: "⭐⭐⭐⭐",
+    cmd: "ollama pull gemma2:9b",
+    featured: true
+  },
+  {
+    name: "gemma2:27b",
+    title: "Gemma 2 27B",
+    desc: "高品質通用推理，架構設計討論、技術文件最強",
+    icon: "G", iconClass: "icon-google",
+    tags: ["coding","reason","multimodal"],
+    vram: 18, totalParams: "27B", activeParams: "27B", context: "8K tokens",
+    speed: "⚡⚡", quality: "⭐⭐⭐⭐⭐",
+    cmd: "ollama pull gemma2:27b",
+    featured: true
+  }
+];
+
+const TAG_MAP = {
+  coding: { cls:"tag-coding", label:"Coding" },
+  reason: { cls:"tag-reason", label:"推理" },
+  agent:  { cls:"tag-agent",  label:"Agent" },
+  fast:   { cls:"tag-fast",   label:"快速" },
+  multimodal: { cls:"tag-multimodal", label:"通用" }
+};
+
+const VRAM_COLORS = {
+  nvidia: "#76b900",
+  google: "#4285f4"
+};
+
+function makeModelCard(m, color) {
+  const tags = m.tags.map(t => `<span class="tag ${TAG_MAP[t].cls}">${TAG_MAP[t].label}</span>`).join('');
+  const vramPct = Math.round(m.vram / 48 * 100);
+  return `
+    <div class="model-card ${m.featured?'featured':''}">
+      <div class="model-header">
+        <div class="model-icon ${m.iconClass}" style="color:${color};font-weight:700;font-size:18px;">${m.icon}</div>
+        <div>
+          <div class="model-name">${m.name}</div>
+          <div class="model-desc">${m.desc}</div>
+        </div>
+      </div>
+      <div class="model-tags">${tags}</div>
+      <div class="model-specs">
+        <div class="spec"><div class="k">總參數</div><div class="v">${m.totalParams}</div></div>
+        <div class="spec"><div class="k">VRAM</div><div class="v ${m.vram<=10?'green':m.vram<=20?'blue':'amber'}">${m.vram} GB</div></div>
+        <div class="spec"><div class="k">Context</div><div class="v">${m.context}</div></div>
+        <div class="spec"><div class="k">速度 / 品質</div><div class="v" style="font-size:11px;">${m.speed} / ${m.quality}</div></div>
+      </div>
+      <div style="margin-top:10px;">
+        <div class="vram-bar-header" style="font-size:11px;"><span style="color:var(--text3)">VRAM 佔用</span><span style="color:${color}">${m.vram}/${48} GB (${vramPct}%)</span></div>
+        <div class="vram-bar-track"><div class="vram-bar-fill" style="width:${vramPct}%;background:${color};opacity:.7;"></div></div>
+      </div>
+    </div>`;
+}
+
+function renderModels() {
+  document.getElementById('nvidia-models').innerHTML = MODELS_NVIDIA.map(m => makeModelCard(m, '#76b900')).join('');
+  document.getElementById('google-models').innerHTML = MODELS_GOOGLE.map(m => makeModelCard(m, '#4285f4')).join('');
+}
+
+function renderVramBars() {
+  const all = [...MODELS_NVIDIA, ...MODELS_GOOGLE];
+  const shown = all.filter(m => m.featured || m.vram <= 20);
+  const html = shown.map(m => {
+    const isNvidia = MODELS_NVIDIA.includes(m);
+    const color = isNvidia ? '#76b900' : '#4285f4';
+    const pct = Math.round(m.vram / 48 * 100);
+    return `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+        <div style="width:180px;font-size:12px;color:var(--text2);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${m.name}</div>
+        <div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};border-radius:3px;opacity:.75;"></div></div>
+        <div style="width:55px;text-align:right;font-size:11px;color:${color};">${m.vram} GB</div>
+      </div>`;
+  }).join('');
+  document.getElementById('vram-models').innerHTML = html;
+}
+
+const COMBOS = [
+  {
+    title: "🚀 日常主力組合",
+    items: ["nemotron-3-super (16GB)", "gemma2:9b (8GB)"],
+    total: 24,
+    color: "#22d3a0",
+    desc: "兩個模型同時熱載，快速切換不等待"
+  },
+  {
+    title: "⚡ 極速雙開",
+    items: ["nemotron-3-nano (6GB)", "codegemma:7b (6GB)", "gemma2:9b (8GB)"],
+    total: 20,
+    color: "#60a5fa",
+    desc: "三模型共跑，各司其職，總用量僅 20GB"
+  },
+  {
+    title: "🔥 最強單模型",
+    items: ["nemotron 70B (40GB)"],
+    total: 40,
+    color: "#fbbf24",
+    desc: "全力跑最大模型，最高品質輸出"
+  },
+  {
+    title: "🎯 推理+Coding 組合",
+    items: ["nemotron-3-super (16GB)", "gemma2:27b (18GB)"],
+    total: 34,
+    color: "#a78bfa",
+    desc: "複雜架構設計 + 高品質 coding，強強聯手"
+  }
+];
+
+function renderCombos() {
+  document.getElementById('combo-grid').innerHTML = COMBOS.map(c => {
+    const pct = Math.round(c.total / 48 * 100);
+    return `
+      <div class="combo-card">
+        <div class="combo-title">${c.title}</div>
+        <div class="combo-items">${c.items.join('<br>')}</div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${c.desc}</div>
+        <div class="combo-bar-track"><div class="combo-bar-fill" style="width:${pct}%;background:${c.color};opacity:.75;"></div></div>
+        <div class="combo-pct" style="color:${c.color};">${c.total} / 48 GB (${pct}%)</div>
+      </div>`;
+  }).join('');
+}
+
+const COMMANDS = [
+  {
+    step: 1, title: "安裝 Ollama",
+    desc: "在你的系統上安裝 Ollama runtime",
+    cmd: "curl -fsSL https://ollama.com/install.sh | sh"
+  },
+  {
+    step: 2, title: "下載核心模型（建議先拉這三個）",
+    desc: "Nemotron Super + Gemma2 27B + CodeGemma 7B",
+    cmd: "ollama pull nemotron-3-super && ollama pull gemma2:27b && ollama pull codegemma:7b"
+  },
+  {
+    step: 3, title: "安裝 LiteLLM",
+    desc: "Anthropic API 格式轉換代理",
+    cmd: "pip install 'litellm[proxy]'"
+  },
+  {
+    step: 4, title: "啟動 LiteLLM Proxy",
+    desc: "把 litellm_config.yaml 放在同一目錄",
+    cmd: "litellm --config litellm_config.yaml --port 4000"
+  },
+  {
+    step: 5, title: "設定環境變數（加到 .zshrc 或 .bashrc）",
+    desc: "讓 Claude Code Plugin 指向本地 Proxy",
+    cmd: 'export ANTHROPIC_BASE_URL="http://localhost:4000"\nexport ANTHROPIC_API_KEY="sk-local-dev-2025"'
+  },
+  {
+    step: 6, title: "追加模型（之後可隨時新增）",
+    desc: "有需要時拉更多模型",
+    cmd: "ollama pull nemotron && ollama pull gemma2:9b && ollama pull nemotron-3-nano"
+  }
+];
+
+function renderCommands() {
+  document.getElementById('cmd-list').innerHTML = COMMANDS.map(c => `
+    <div class="cmd-item">
+      <div class="cmd-step">
+        <div class="step-num">${c.step}</div>
+        <div class="cmd-content" style="flex:1;">
+          <div class="title">${c.title}</div>
+          <div class="desc">${c.desc}</div>
+          <code onclick="copyInline(this)">${c.cmd.replace(/\n/g,'<br>')}</code>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function switchTab(id) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('panel-'+id).classList.add('active');
+}
+
+function copyCode(id, btn) {
+  const el = document.getElementById(id);
+  const text = el.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✓ 已複製'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '複製'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+function copyInline(el) {
+  const text = el.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = el.style.borderColor;
+    el.style.borderColor = 'rgba(34,211,160,0.5)';
+    setTimeout(() => el.style.borderColor = orig, 1500);
+  });
+}
+
+renderModels();
+renderVramBars();
+renderCombos();
+renderCommands();
+</script>
+</body>
+</html>

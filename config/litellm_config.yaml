@@ -1,0 +1,125 @@
+# ============================================================
+#  LiteLLM Proxy 設定 — 48GB GPU 完整版
+#  NVIDIA Nemotron + Google Gemma 多模型自由切換
+#  VSCode Claude Code Plugin 透過此 Proxy 路由請求
+# ============================================================
+
+model_list:
+
+  # ╔══════════════════════════════════════════════════════╗
+  # ║  NVIDIA Nemotron 系列                                ║
+  # ╚══════════════════════════════════════════════════════╝
+
+  # ── Nemotron 3 Nano（3.6B active，~6GB，速度最快）──────
+  - model_name: nemotron-nano
+    litellm_params:
+      model: ollama/nemotron-3-nano
+      api_base: http://ollama:11434
+      timeout: 120
+
+  # ── Nemotron 3 Super（12B active，~16GB，主力推薦）─────
+  - model_name: nemotron-super
+    litellm_params:
+      model: ollama/nemotron-3-super
+      api_base: http://ollama:11434
+      timeout: 300
+
+  # ── Nemotron 70B（~40GB，旗艦通用）─────────────────────
+  - model_name: nemotron-70b
+    litellm_params:
+      model: ollama/nemotron
+      api_base: http://ollama:11434
+      timeout: 600
+
+  # ╔══════════════════════════════════════════════════════╗
+  # ║  Google Gemma / CodeGemma 系列                       ║
+  # ╚══════════════════════════════════════════════════════╝
+
+  # ── CodeGemma 2B（~2GB，極輕量補全）────────────────────
+  - model_name: codegemma-2b
+    litellm_params:
+      model: ollama/codegemma:2b
+      api_base: http://ollama:11434
+      timeout: 60
+
+  # ── CodeGemma 7B（~6GB，Python/JS 專用）────────────────
+  - model_name: codegemma-7b
+    litellm_params:
+      model: ollama/codegemma:7b
+      api_base: http://ollama:11434
+      timeout: 120
+
+  # ── Gemma 2 9B（~8GB，通用平衡）────────────────────────
+  - model_name: gemma2-9b
+    litellm_params:
+      model: ollama/gemma2:9b
+      api_base: http://ollama:11434
+      timeout: 180
+
+  # ── Gemma 2 27B（~18GB，高品質通用）────────────────────
+  - model_name: gemma2-27b
+    litellm_params:
+      model: ollama/gemma2:27b
+      api_base: http://ollama:11434
+      timeout: 600
+
+  # ╔══════════════════════════════════════════════════════╗
+  # ║  Claude Code 預設入口（對應 model name 路由）        ║
+  # ║  Claude Code Plugin 預設呼叫這些 model name          ║
+  # ╚══════════════════════════════════════════════════════╝
+
+  # 預設 Sonnet → 路由到 nemotron-super（最佳 coding 品質）
+  - model_name: claude-sonnet-4-5
+    litellm_params:
+      model: ollama/nemotron-3-super
+      api_base: http://ollama:11434
+      timeout: 300
+
+  # Haiku → 路由到 nemotron-nano（快速回應）
+  - model_name: claude-haiku-4-5-20251001
+    litellm_params:
+      model: ollama/nemotron-3-nano
+      api_base: http://ollama:11434
+      timeout: 120
+
+  # Opus → 路由到 nemotron-70b（最高品質任務）
+  - model_name: claude-opus-4-6
+    litellm_params:
+      model: ollama/nemotron
+      api_base: http://ollama:11434
+      timeout: 600
+
+  # ╔══════════════════════════════════════════════════════╗
+  # ║  備援路由：本地失敗時 fallback 到雲端（可選）        ║
+  # ║  需在 .env 填入對應 API Key 才會啟用                 ║
+  # ╚══════════════════════════════════════════════════════╝
+
+  # 備援 Sonnet（本地掛掉時自動切換到 Anthropic Cloud）
+  - model_name: claude-sonnet-4-5-fallback
+    litellm_params:
+      model: claude-sonnet-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      timeout: 60
+
+# ── 全域路由設定（5+ 人多人使用優化）───────────────────────
+router_settings:
+  routing_strategy: usage-based-routing  # 依用量分配，避免單一模型過載
+  num_retries: 3                         # 多人時提高重試次數
+  retry_after: 10                        # 排隊時等久一點再重試
+  timeout: 600                           # 全域 timeout
+  allowed_fails: 3                       # 連續失敗 N 次後暫時移除該 model
+
+# ── 通用設定 ────────────────────────────────────────────────
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  drop_params: true                     # 忽略 Anthropic 專屬參數，避免報錯
+  store_model_in_db: false
+
+# ── LiteLLM 內部設定 ────────────────────────────────────────
+litellm_settings:
+  set_verbose: false
+  request_timeout: 600
+  success_callback: []
+  failure_callback: []
+  # 讓 Ollama 返回的格式符合 Anthropic SDK 預期
+  modify_params: true

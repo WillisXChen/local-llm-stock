@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VSCode Claude Code Plugin 串接 Local LLM Stack（跨主機版）</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232736;
+    --border: #2e3347;
+    --text: #e2e4ed;
+    --text-dim: #8b8fa7;
+    --accent: #7c6aef;
+    --accent-light: #a698f8;
+    --green: #4ade80;
+    --green-dim: #16653a;
+    --orange: #f59e0b;
+    --orange-dim: #78520a;
+    --red: #f87171;
+    --blue: #60a5fa;
+    --cyan: #22d3ee;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans TC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 0;
+  }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, #1e1b4b 0%, #0f1117 50%, #0c2a1e 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 60px 20px 50px;
+    text-align: center;
+  }
+  .hero h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, var(--accent-light), var(--cyan));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .hero p { color: var(--text-dim); font-size: 1.05rem; max-width: 660px; margin: 0 auto; }
+  .hero .badge {
+    display: inline-block;
+    margin-top: 16px;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: var(--orange);
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .container { max-width: 900px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  /* Architecture */
+  .arch-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 36px 28px;
+    margin-bottom: 40px;
+  }
+  .arch-box h2 { text-align: center; margin-bottom: 24px; font-size: 1.3rem; }
+
+  .arch-split {
+    display: flex;
+    gap: 0;
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  .arch-machine {
+    flex: 1;
+    min-width: 260px;
+    padding: 20px;
+    border-radius: 12px;
+    position: relative;
+  }
+  .arch-machine.client {
+    background: rgba(124, 106, 239, 0.06);
+    border: 2px dashed rgba(124, 106, 239, 0.3);
+  }
+  .arch-machine.server {
+    background: rgba(74, 222, 128, 0.06);
+    border: 2px dashed rgba(74, 222, 128, 0.3);
+  }
+  .arch-machine-label {
+    position: absolute;
+    top: -12px;
+    left: 20px;
+    padding: 2px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .client .arch-machine-label { background: var(--accent); color: #fff; }
+  .server .arch-machine-label { background: var(--green-dim); color: var(--green); }
+
+  .arch-node {
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    text-align: center;
+    margin: 10px 0;
+  }
+  .arch-node .icon { font-size: 1.6rem; margin-bottom: 4px; }
+  .arch-node .label { font-weight: 600; font-size: 0.9rem; }
+  .arch-node .sub { color: var(--text-dim); font-size: 0.75rem; margin-top: 2px; }
+
+  .arch-network {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 12px;
+    flex-shrink: 0;
+  }
+  .arch-network .net-icon { font-size: 1.8rem; margin-bottom: 4px; }
+  .arch-network .net-label {
+    font-size: 0.7rem;
+    color: var(--orange);
+    font-weight: 600;
+    writing-mode: vertical-rl;
+    letter-spacing: 1px;
+  }
+  .arch-network .net-arrow {
+    color: var(--orange);
+    font-size: 1.4rem;
+    margin: 4px 0;
+  }
+
+  /* Steps */
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px 28px;
+    margin-bottom: 28px;
+    position: relative;
+  }
+  .step-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 14px;
+  }
+  .step h3 { font-size: 1.2rem; margin-bottom: 12px; }
+  .step p, .step > ul > li { color: var(--text-dim); margin-bottom: 10px; }
+
+  /* Machine indicator tags */
+  .on-server, .on-client {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 12px;
+    margin-left: 8px;
+    vertical-align: middle;
+    letter-spacing: 0.3px;
+  }
+  .on-server { background: var(--green-dim); color: var(--green); }
+  .on-client { background: rgba(124, 106, 239, 0.2); color: var(--accent-light); }
+
+  /* Code blocks */
+  pre {
+    background: #0d0f16;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    font-size: 0.86rem;
+    line-height: 1.65;
+    margin: 12px 0 16px;
+    position: relative;
+  }
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+    color: var(--text);
+  }
+  pre .comment { color: #6b7280; }
+  pre .key { color: var(--accent-light); }
+  pre .val { color: var(--green); }
+  pre .cmd { color: var(--orange); }
+  pre .flag { color: var(--cyan); }
+  pre .placeholder { color: var(--orange); font-style: italic; background: rgba(245,158,11,0.1); padding: 0 4px; border-radius: 3px; }
+
+  .code-label {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    background: var(--surface2);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: -apple-system, sans-serif;
+  }
+
+  p code, li code, td code {
+    background: var(--surface2);
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 0.86em;
+    color: var(--accent-light);
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 0.88rem;
+  }
+  th {
+    background: var(--surface2);
+    text-align: left;
+    padding: 10px 14px;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  tr:hover td { background: rgba(124, 106, 239, 0.04); }
+
+  /* Callout boxes */
+  .callout {
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin: 16px 0;
+    font-size: 0.88rem;
+  }
+  .callout.info {
+    background: rgba(96, 165, 250, 0.08);
+    border-left: 4px solid var(--blue);
+  }
+  .callout.warn {
+    background: rgba(245, 158, 11, 0.08);
+    border-left: 4px solid var(--orange);
+  }
+  .callout.success {
+    background: rgba(74, 222, 128, 0.08);
+    border-left: 4px solid var(--green);
+  }
+  .callout.danger {
+    background: rgba(248, 113, 113, 0.08);
+    border-left: 4px solid var(--red);
+  }
+  .callout-title { font-weight: 600; margin-bottom: 4px; }
+
+  /* Model cards */
+  .model-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 14px;
+    margin: 16px 0;
+  }
+  .model-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .model-card .name { font-weight: 600; font-size: 0.95rem; margin-bottom: 4px; }
+  .model-card .meta { color: var(--text-dim); font-size: 0.8rem; }
+  .model-card .tag {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    margin-top: 6px;
+    font-weight: 600;
+  }
+  .tag-fast { background: var(--green-dim); color: var(--green); }
+  .tag-balanced { background: var(--orange-dim); color: var(--orange); }
+  .tag-quality { background: rgba(124, 106, 239, 0.2); color: var(--accent-light); }
+
+  /* Mapping table */
+  .mapping-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+  }
+  .mapping-row:last-child { border-bottom: none; }
+  .mapping-from {
+    background: rgba(124, 106, 239, 0.12);
+    color: var(--accent-light);
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-family: 'SF Mono', monospace;
+    font-size: 0.82rem;
+    min-width: 200px;
+    text-align: center;
+  }
+  .mapping-arrow { color: var(--text-dim); font-size: 1.2rem; }
+  .mapping-to {
+    background: rgba(74, 222, 128, 0.12);
+    color: var(--green);
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-family: 'SF Mono', monospace;
+    font-size: 0.82rem;
+  }
+
+  /* Flow steps */
+  .flow {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin: 20px 0;
+    flex-wrap: wrap;
+  }
+  .flow-step {
+    flex: 1;
+    min-width: 140px;
+    background: var(--surface2);
+    padding: 14px 10px;
+    text-align: center;
+    border: 1px solid var(--border);
+  }
+  .flow-step:first-child { border-radius: 10px 0 0 10px; }
+  .flow-step:last-child { border-radius: 0 10px 10px 0; }
+  .flow-step .flow-num {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .flow-step .flow-label { font-size: 0.78rem; color: var(--text-dim); }
+  .flow-step.network-boundary {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.3);
+    flex: 0.6;
+    min-width: 100px;
+  }
+  .flow-step.network-boundary .flow-num { color: var(--orange); }
+  .flow-sep {
+    display: flex;
+    align-items: center;
+    color: var(--text-dim);
+    font-size: 1.1rem;
+    padding: 0 1px;
+  }
+
+  /* Toggle sections */
+  details {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin: 12px 0;
+    overflow: hidden;
+  }
+  details summary {
+    padding: 14px 18px;
+    cursor: pointer;
+    font-weight: 600;
+    user-select: none;
+    list-style: none;
+  }
+  details summary::before {
+    content: '>';
+    display: inline-block;
+    margin-right: 10px;
+    transition: transform 0.2s;
+    color: var(--accent);
+    font-family: monospace;
+  }
+  details[open] summary::before { transform: rotate(90deg); }
+  details .inner { padding: 0 18px 16px; }
+
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin-bottom: 6px; color: var(--text-dim); }
+  li strong { color: var(--text); }
+
+  a { color: var(--accent-light); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .footer {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-dim);
+    font-size: 0.82rem;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+
+  /* IP placeholder highlight */
+  .ip-highlight {
+    display: inline-block;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px dashed rgba(245, 158, 11, 0.4);
+    color: var(--orange);
+    padding: 1px 8px;
+    border-radius: 5px;
+    font-family: 'SF Mono', monospace;
+    font-size: 0.88em;
+    font-weight: 600;
+  }
+
+  /* Two-column layout */
+  .dual-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .dual-col > div {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .dual-col h4 { margin-bottom: 10px; font-size: 0.95rem; }
+
+  @media (max-width: 700px) {
+    .hero h1 { font-size: 1.5rem; }
+    .arch-split { flex-direction: column; }
+    .arch-network { flex-direction: row; padding: 10px 0; }
+    .arch-network .net-label { writing-mode: horizontal-tb; }
+    .mapping-row { flex-direction: column; gap: 6px; }
+    .mapping-from { min-width: auto; }
+    .flow { flex-direction: column; }
+    .flow-step { border-radius: 0 !important; }
+    .flow-step:first-child { border-radius: 10px 10px 0 0 !important; }
+    .flow-step:last-child { border-radius: 0 0 10px 10px !important; }
+    .flow-sep { justify-content: center; transform: rotate(90deg); padding: 4px 0; }
+    .dual-col { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ====== Hero ====== -->
+<div class="hero">
+  <h1>VSCode Claude Code &times; Local LLM Stack</h1>
+  <p>透過 RAG Proxy + LiteLLM 將 VSCode 上的 Claude Code 插件串接到另一台主機的 Ollama 模型，搭配 Qdrant 向量搜尋提升回應品質</p>
+  <div class="badge">跨主機部署版 + RAG 向量搜尋 + 多人隔離 &mdash; VSCode 與 LLM Server 在不同機器上</div>
+</div>
+
+<div class="container">
+
+<!-- ====== Architecture ====== -->
+<div class="arch-box">
+  <h2>跨主機架構總覽</h2>
+  <div class="arch-split">
+    <!-- Client Machine -->
+    <div class="arch-machine client">
+      <div class="arch-machine-label">YOUR MAC / PC (開發機)</div>
+      <div class="arch-node" style="border-color:var(--accent);">
+        <div class="icon">🧩</div>
+        <div class="label">VSCode + Claude Code</div>
+        <div class="sub">透過環境變數指向遠端 LiteLLM</div>
+      </div>
+      <div class="arch-node" style="border-color:var(--accent); opacity:0.7;">
+        <div class="icon">💻</div>
+        <div class="label">Terminal / Shell</div>
+        <div class="sub">ANTHROPIC_BASE_URL 指向 Server IP</div>
+      </div>
+    </div>
+
+    <!-- Network -->
+    <div class="arch-network">
+      <div class="net-arrow">&larr;</div>
+      <div class="net-icon">🌐</div>
+      <div class="net-label">L A N</div>
+      <div class="net-arrow">&rarr;</div>
+    </div>
+
+    <!-- Server Machine -->
+    <div class="arch-machine server">
+      <div class="arch-machine-label">GPU SERVER (LLM 主機)</div>
+      <div class="arch-node" style="border-color:var(--red);">
+        <div class="icon">🔍</div>
+        <div class="label">RAG Proxy</div>
+        <div class="sub">:4001 &mdash; API Key 驗證 + GPU 排隊 + 向量搜尋</div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <div class="arch-node" style="border-color:var(--orange); flex:1;">
+          <div class="icon">🔀</div>
+          <div class="label">LiteLLM</div>
+          <div class="sub">:4000</div>
+        </div>
+        <div class="arch-node" style="border-color:var(--blue); flex:1;">
+          <div class="icon">🧊</div>
+          <div class="label">Qdrant</div>
+          <div class="sub">:6333 向量 DB</div>
+        </div>
+      </div>
+      <div class="arch-node" style="border-color:var(--green);">
+        <div class="icon">🦙</div>
+        <div class="label">Ollama</div>
+        <div class="sub">:11434 &mdash; 推理 + 嵌入模型</div>
+      </div>
+      <div class="arch-node" style="border-color:var(--cyan);">
+        <div class="icon">🎮</div>
+        <div class="label">NVIDIA GPU</div>
+        <div class="sub">48GB VRAM</div>
+      </div>
+    </div>
+  </div>
+
+  <p style="text-align:center; color:var(--text-dim); font-size:0.85rem; margin-top:20px;">
+    Claude Code &xrarr; <strong style="color:var(--orange);">區域網路</strong> &xrarr; RAG Proxy（API Key 驗證 &rarr; GPU 排隊 &rarr; 搜尋 Qdrant &rarr; 注入上下文）&rarr; LiteLLM &rarr; Ollama &rarr; GPU 推理
+  </p>
+</div>
+
+<!-- ====== 運作原理 ====== -->
+<div class="step">
+  <h3>運作原理</h3>
+  <p>核心概念：<strong>讓開發機上的 Claude Code 以為自己在呼叫 Anthropic 雲端 API，但實際上請求被導向 GPU Server 上的 LiteLLM Proxy，再路由到本地 Ollama 模型推理</strong>。</p>
+
+  <div class="flow">
+    <div class="flow-step">
+      <div class="flow-num">1</div>
+      <div class="flow-label">Claude Code<br>發送請求<br><code>X-API-Key</code></div>
+    </div>
+    <div class="flow-sep">&rarr;</div>
+    <div class="flow-step network-boundary">
+      <div class="flow-num">2</div>
+      <div class="flow-label">經區域網路<br>到 RAG Proxy<br><code>:4001</code></div>
+    </div>
+    <div class="flow-sep">&rarr;</div>
+    <div class="flow-step" style="background:rgba(248,113,113,0.08); border-color:rgba(248,113,113,0.3);">
+      <div class="flow-num" style="color:var(--red);">3</div>
+      <div class="flow-label">API Key 驗證<br>+ GPU 排隊</div>
+    </div>
+    <div class="flow-sep">&rarr;</div>
+    <div class="flow-step" style="background:rgba(96,165,250,0.08); border-color:rgba(96,165,250,0.3);">
+      <div class="flow-num" style="color:var(--blue);">4</div>
+      <div class="flow-label">Qdrant 搜尋<br>相關程式碼<br>注入 prompt</div>
+    </div>
+    <div class="flow-sep">&rarr;</div>
+    <div class="flow-step">
+      <div class="flow-num">5</div>
+      <div class="flow-label">LiteLLM 路由<br>到 Ollama</div>
+    </div>
+    <div class="flow-sep">&rarr;</div>
+    <div class="flow-step">
+      <div class="flow-num">6</div>
+      <div class="flow-label">GPU 推理<br>串流回傳</div>
+    </div>
+  </div>
+
+  <h4 style="margin-top:18px; margin-bottom:10px;">模型路由對照表</h4>
+  <p>LiteLLM 把 Claude Code 發出的模型名稱，自動對應到 Server 上的 Ollama 模型：</p>
+
+  <div style="margin-top:12px;">
+    <div class="mapping-row">
+      <div class="mapping-from">claude-haiku-4-5-20251001</div>
+      <div class="mapping-arrow">&rarr;</div>
+      <div class="mapping-to">nemotron-3-nano (3.6B)</div>
+      <span style="color:var(--text-dim); font-size:0.8rem; margin-left:8px;">快速回應</span>
+    </div>
+    <div class="mapping-row">
+      <div class="mapping-from">claude-sonnet-4-5</div>
+      <div class="mapping-arrow">&rarr;</div>
+      <div class="mapping-to">nemotron-3-super (12B)</div>
+      <span style="color:var(--text-dim); font-size:0.8rem; margin-left:8px;">主力推薦</span>
+    </div>
+    <div class="mapping-row">
+      <div class="mapping-from">claude-opus-4-6</div>
+      <div class="mapping-arrow">&rarr;</div>
+      <div class="mapping-to">nemotron-70b (70B)</div>
+      <span style="color:var(--text-dim); font-size:0.8rem; margin-left:8px;">旗艦品質</span>
+    </div>
+  </div>
+</div>
+
+<!-- ====== 可用模型 ====== -->
+<div class="step">
+  <h3>可用模型一覽（GPU Server 端）</h3>
+  <p>以下是 Stack 中預設配置的所有模型，皆運行在 GPU Server 上：</p>
+
+  <h4 style="margin:14px 0 8px;">NVIDIA Nemotron 系列</h4>
+  <div class="model-grid">
+    <div class="model-card">
+      <div class="name">nemotron-nano</div>
+      <div class="meta">3.6B active &middot; ~6GB VRAM</div>
+      <div><span class="tag tag-fast">快速日常</span></div>
+    </div>
+    <div class="model-card">
+      <div class="name">nemotron-super</div>
+      <div class="meta">12B active &middot; ~16GB VRAM</div>
+      <div><span class="tag tag-balanced">主力推薦</span></div>
+    </div>
+    <div class="model-card">
+      <div class="name">nemotron-70b</div>
+      <div class="meta">70B &middot; ~40GB VRAM</div>
+      <div><span class="tag tag-quality">旗艦通用</span></div>
+    </div>
+  </div>
+
+  <h4 style="margin:14px 0 8px;">Google Gemma / CodeGemma 系列</h4>
+  <div class="model-grid">
+    <div class="model-card">
+      <div class="name">codegemma-2b</div>
+      <div class="meta">2B &middot; ~2GB VRAM</div>
+      <div><span class="tag tag-fast">極輕量補全</span></div>
+    </div>
+    <div class="model-card">
+      <div class="name">codegemma-7b</div>
+      <div class="meta">7B &middot; ~6GB VRAM</div>
+      <div><span class="tag tag-fast">Python/JS 專用</span></div>
+    </div>
+    <div class="model-card">
+      <div class="name">gemma2-9b</div>
+      <div class="meta">9B &middot; ~8GB VRAM</div>
+      <div><span class="tag tag-balanced">通用平衡</span></div>
+    </div>
+    <div class="model-card">
+      <div class="name">gemma2-27b</div>
+      <div class="meta">27B &middot; ~18GB VRAM</div>
+      <div><span class="tag tag-quality">高品質通用</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Step 1: 前置需求 ====== -->
+<div class="step">
+  <div class="step-badge">1</div>
+  <h3>前置需求</h3>
+
+  <div class="dual-col">
+    <div>
+      <h4>🎮 GPU Server (LLM 主機)</h4>
+      <table>
+        <tr><td><strong>Docker</strong> 24+</td><td>含 Compose V2</td></tr>
+        <tr><td><strong>NVIDIA Driver</strong> 535+</td><td>CUDA 12.x</td></tr>
+        <tr><td><strong>nvidia-container-toolkit</strong></td><td>Docker GPU 存取</td></tr>
+        <tr><td><strong>開放 Port 4001</strong></td><td>RAG Proxy（Claude Code 連這裡）</td></tr>
+        <tr><td><strong>開放 Port 4000</strong></td><td>LiteLLM 直連（可選，不經 RAG）</td></tr>
+      </table>
+    </div>
+    <div>
+      <h4>💻 開發機 (Mac / PC)</h4>
+      <table>
+        <tr><td><strong>VSCode</strong> 最新版</td><td>-</td></tr>
+        <tr><td><strong>Claude Code 擴充功能</strong></td><td>已安裝</td></tr>
+        <tr><td><strong>網路連線</strong></td><td>能存取 Server IP</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <div class="callout-title">確認你的 Server IP</div>
+    在 GPU Server 上執行 <code>hostname -I</code>（Linux）或 <code>ip addr</code> 取得 LAN IP。<br>
+    本指引中使用 <span class="ip-highlight">GPU_SERVER_IP</span> 作為佔位符，請替換為實際 IP（例如 <code>192.168.1.100</code>）。
+  </div>
+</div>
+
+<!-- ====== Step 2: Server 端設定 ====== -->
+<div class="step">
+  <div class="step-badge">2</div>
+  <h3>GPU Server 端：啟動 Local LLM Stack <span class="on-server">在 GPU Server 上操作</span></h3>
+  <p>SSH 進入 GPU Server，部署並啟動服務：</p>
+
+<pre><code><span class="comment"># SSH 進入 GPU Server</span>
+<span class="cmd">ssh</span> <span class="placeholder">user@GPU_SERVER_IP</span>
+
+<span class="comment"># 進入專案目錄</span>
+<span class="cmd">cd</span> ~/local-llm-stack
+
+<span class="comment"># 首次啟動：初始化環境檢查（會建立 .env 檔案）</span>
+<span class="cmd">./manage.sh</span> <span class="flag">setup</span>
+
+<span class="comment"># 啟動所有服務</span>
+<span class="cmd">./manage.sh</span> <span class="flag">start</span>
+</code><span class="code-label">GPU Server Terminal</span></pre>
+
+  <p>啟動成功後，服務端點如下（從 Server 本機看）：</p>
+  <table>
+    <tr><th>服務</th><th>Server 本機</th><th>從開發機存取</th></tr>
+    <tr><td><strong>RAG Proxy</strong></td><td><code>http://localhost:4001</code></td><td><code>http://<span class="ip-highlight">GPU_SERVER_IP</span>:4001</code> <span class="on-client" style="margin:0;">Claude Code 連這裡</span></td></tr>
+    <tr><td>LiteLLM Proxy</td><td><code>http://localhost:4000</code></td><td><code>http://<span class="ip-highlight">GPU_SERVER_IP</span>:4000</code>（直連，無 RAG）</td></tr>
+    <tr><td>Qdrant</td><td><code>http://localhost:6333</code></td><td>內部使用，不需外部存取</td></tr>
+    <tr><td>Ollama</td><td><code>http://localhost:11434</code></td><td>內部使用，不需外部存取</td></tr>
+    <tr><td>Open WebUI</td><td><code>http://localhost:8080</code></td><td><code>http://<span class="ip-highlight">GPU_SERVER_IP</span>:8080</code></td></tr>
+  </table>
+
+  <div class="callout warn">
+    <div class="callout-title">首次啟動注意</div>
+    <code>model-puller</code> 服務會自動下載預設模型（nomic-embed-text, nemotron-3-nano, codegemma:7b, gemma2:9b, nemotron-3-super, gemma2:27b），依頻寬約需 20-40 分鐘。用 <code>./manage.sh logs model-puller</code> 追蹤進度。
+  </div>
+</div>
+
+<!-- ====== Step 3: 防火牆 ====== -->
+<div class="step">
+  <div class="step-badge">3</div>
+  <h3>GPU Server 端：開放防火牆 Port <span class="on-server">在 GPU Server 上操作</span></h3>
+  <p>確保開發機能夠連到 LiteLLM Proxy 的 Port 4000：</p>
+
+  <details>
+    <summary>Ubuntu / Debian（ufw）</summary>
+    <div class="inner">
+<pre><code><span class="comment"># 開放 RAG Proxy port（Claude Code 連這裡）</span>
+<span class="cmd">sudo ufw allow</span> <span class="val">4001/tcp</span> <span class="flag">comment</span> <span class="val">'RAG Proxy'</span>
+
+<span class="comment"># 也開放 LiteLLM 直連（可選，用於不經 RAG 的情境）</span>
+<span class="cmd">sudo ufw allow</span> <span class="val">4000/tcp</span> <span class="flag">comment</span> <span class="val">'LiteLLM Proxy'</span>
+
+<span class="comment"># Open WebUI（可選）</span>
+<span class="cmd">sudo ufw allow</span> <span class="val">8080/tcp</span> <span class="flag">comment</span> <span class="val">'Open WebUI'</span>
+
+<span class="cmd">sudo ufw reload</span></code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>CentOS / RHEL（firewalld）</summary>
+    <div class="inner">
+<pre><code><span class="cmd">sudo firewall-cmd</span> <span class="flag">--permanent --add-port=</span><span class="val">4001/tcp</span>
+<span class="cmd">sudo firewall-cmd</span> <span class="flag">--permanent --add-port=</span><span class="val">4000/tcp</span>
+<span class="cmd">sudo firewall-cmd</span> <span class="flag">--permanent --add-port=</span><span class="val">8080/tcp</span>
+<span class="cmd">sudo firewall-cmd</span> <span class="flag">--reload</span></code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>無防火牆 / 已由路由器管理</summary>
+    <div class="inner">
+      <p>如果 Server 在同一區網且無防火牆限制，可跳過此步驟。</p>
+    </div>
+  </details>
+
+  <h4 style="margin-top:18px;">驗證連線</h4>
+  <p>在<strong>開發機</strong>上測試能否連到 Server：</p>
+
+<pre><code><span class="comment"># 在你的開發機 Terminal 執行（替換為真實 IP）</span>
+<span class="cmd">curl</span> <span class="val">http://<span class="placeholder">GPU_SERVER_IP</span>:4001/health</span>   <span class="comment"># RAG Proxy</span>
+<span class="cmd">curl</span> <span class="val">http://<span class="placeholder">GPU_SERVER_IP</span>:4000/health</span>   <span class="comment"># LiteLLM（直連）</span>
+</code><span class="code-label">開發機 Terminal</span></pre>
+
+  <div class="callout success">
+    <div class="callout-title">預期結果</div>
+    回傳 JSON 表示 LiteLLM 健康狀態，例如 <code>{"status":"healthy"}</code>。如果 timeout 或 connection refused，請檢查防火牆和 Docker 是否正常運行。
+  </div>
+</div>
+
+<!-- ====== Step 4: Server 端驗證 ====== -->
+<div class="step">
+  <div class="step-badge">4</div>
+  <h3>確認 Server 服務正常 <span class="on-server">在 GPU Server 上操作</span></h3>
+
+<pre><code><span class="comment"># 查看所有服務狀態 + GPU 使用量 + 已載入模型</span>
+<span class="cmd">./manage.sh</span> <span class="flag">status</span>
+
+<span class="comment"># 發送測試請求（在 Server 上用 localhost 測試）</span>
+<span class="cmd">./manage.sh</span> <span class="flag">test</span>
+</code><span class="code-label">GPU Server Terminal</span></pre>
+
+  <p>也可以從<strong>開發機</strong>遠端測試（把 <span class="ip-highlight">GPU_SERVER_IP</span> 換成實際 IP）：</p>
+
+<pre><code><span class="comment"># 從開發機發送遠端測試請求</span>
+<span class="cmd">curl</span> <span class="flag">-s</span> http://<span class="placeholder">GPU_SERVER_IP</span>:4000/v1/messages \
+  <span class="flag">-H</span> <span class="val">"x-api-key: <span class="placeholder">YOUR_LITELLM_MASTER_KEY</span>"</span> \
+  <span class="flag">-H</span> <span class="val">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="val">'{
+    "model": "nemotron-super",
+    "max_tokens": 80,
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</span>
+</code><span class="code-label">開發機 Terminal</span></pre>
+
+  <div class="callout success">
+    <div class="callout-title">預期結果</div>
+    回傳 JSON 包含模型回應文字。代表跨主機通訊 + LiteLLM + Ollama 全部正常！
+  </div>
+</div>
+
+<!-- ====== Step 5: API Key 設定（多人隔離）====== -->
+<div class="step">
+  <div class="step-badge">5</div>
+  <h3>GPU Server 端：設定 API Key（多人隔離）<span class="on-server">在 GPU Server 上操作</span></h3>
+  <p>每位團隊成員需要一把專屬 API Key 才能使用 RAG Proxy。Key 綁定身份和預設專案，實現<strong>身份驗證 + Per-project RAG 隔離 + GPU 排隊追蹤</strong>。</p>
+
+  <h4 style="margin:16px 0 8px;">Step 1：為每位成員產生 Key</h4>
+
+<pre><code><span class="comment"># 在 GPU Server 上產生隨機 Key</span>
+<span class="cmd">python3</span> <span class="flag">-c</span> <span class="val">"import secrets; print(f'rag-{secrets.token_urlsafe(32)}')"</span>
+
+<span class="comment"># 範例輸出：rag-A7kX9mP2vQ8nR4wL6yT1bF3jH5sD0eK...</span>
+</code><span class="code-label">GPU Server Terminal</span></pre>
+
+  <h4 style="margin:16px 0 8px;">Step 2：編輯 API Keys 設定檔</h4>
+  <p>編輯 <code>config/api_keys.json</code>，為每位成員加入一筆記錄：</p>
+
+<pre><code>{
+  <span class="key">"keys"</span>: {
+    <span class="key">"<span class="placeholder">rag-Willis的Key</span>"</span>: {
+      <span class="key">"user_id"</span>: <span class="val">"willis"</span>,
+      <span class="key">"project_id"</span>: <span class="val">"xse-apps"</span>,
+      <span class="key">"enabled"</span>: <span class="val">true</span>
+    },
+    <span class="key">"<span class="placeholder">rag-Dev2的Key</span>"</span>: {
+      <span class="key">"user_id"</span>: <span class="val">"dev2"</span>,
+      <span class="key">"project_id"</span>: <span class="val">"xse-api"</span>,
+      <span class="key">"enabled"</span>: <span class="val">true</span>
+    },
+    <span class="key">"<span class="placeholder">rag-Dev3的Key</span>"</span>: {
+      <span class="key">"user_id"</span>: <span class="val">"dev3"</span>,
+      <span class="key">"project_id"</span>: <span class="val">"xse-apps"</span>,
+      <span class="key">"enabled"</span>: <span class="val">true</span>
+    }
+  }
+}
+</code><span class="code-label">config/api_keys.json（GPU Server）</span></pre>
+
+  <div class="callout info">
+    <div class="callout-title">Key Config 欄位說明</div>
+    <table style="margin:8px 0 0;">
+      <tr><th>欄位</th><th>說明</th></tr>
+      <tr><td><code>user_id</code></td><td>用於 log 追蹤和 GPU 排隊識別（顯示在 rag-proxy log 中）</td></tr>
+      <tr><td><code>project_id</code></td><td>預設 RAG collection，自動路由到 <code>codebase-{project_id}</code></td></tr>
+      <tr><td><code>enabled</code></td><td>設 <code>false</code> 可立即停用該 Key（不需重啟服務）</td></tr>
+    </table>
+  </div>
+
+  <div class="callout success">
+    <div class="callout-title">Hot Reload：修改 api_keys.json 不需要重啟</div>
+    RAG Proxy 會自動偵測檔案變更並重新載入 Key 清單。新增 / 停用 Key 即時生效。
+  </div>
+</div>
+
+<!-- ====== Step 6: Client 端設定 ====== -->
+<div class="step">
+  <div class="step-badge">6</div>
+  <h3>開發機端：設定 Claude Code 環境變數 <span class="on-client">在開發機上操作</span></h3>
+  <p>這是最關鍵的步驟 &mdash; 告訴你的 VSCode Claude Code 把 API 請求導向遠端 GPU Server 上的 RAG Proxy，並帶上你的專屬 API Key。</p>
+
+  <h4 style="margin:16px 0 8px;">方法 A：Shell 環境變數 + API Key Header（推薦）</h4>
+  <p>在開發機的 <code>~/.zshrc</code>（macOS）或 <code>~/.bashrc</code>（Linux）加入：</p>
+
+<pre><code><span class="comment"># ── Local LLM Stack（跨主機串接 + RAG + 多人隔離）──</span>
+<span class="comment"># 將 GPU_SERVER_IP 替換為你的 GPU Server 實際 IP</span>
+<span class="comment"># Port 4001 = RAG Proxy（驗證 + 排隊 + 向量搜尋）</span>
+<span class="key">export</span> <span class="val">ANTHROPIC_BASE_URL</span>=<span class="val">"http://<span class="placeholder">GPU_SERVER_IP</span>:4001"</span>
+<span class="key">export</span> <span class="val">ANTHROPIC_API_KEY</span>=<span class="val">"<span class="placeholder">YOUR_LITELLM_MASTER_KEY</span>"</span>
+</code><span class="code-label">~/.zshrc（開發機）</span></pre>
+
+  <p>接著在 VSCode settings.json 中加入你的 API Key（按 <code>Cmd+Shift+P</code> &rarr; "Preferences: Open User Settings (JSON)"）：</p>
+
+<pre><code>{
+  <span class="comment">// 你的專屬 API Key（向 Server 管理員索取）</span>
+  <span class="key">"claude-code.apiHeaders"</span>: {
+    <span class="key">"X-API-Key"</span>: <span class="val">"<span class="placeholder">rag-你的專屬Key</span>"</span>
+  }
+}
+</code><span class="code-label">settings.json（開發機 VSCode）</span></pre>
+
+  <p>套用環境變數：</p>
+<pre><code><span class="cmd">source</span> ~/.zshrc</code></pre>
+
+  <div class="callout warn">
+    <div class="callout-title">範例：假設 Server IP 是 192.168.1.100</div>
+<pre style="margin:8px 0 0; border:none;"><code><span class="comment"># ~/.zshrc</span>
+<span class="key">export</span> <span class="val">ANTHROPIC_BASE_URL</span>=<span class="val">"http://192.168.1.100:4001"</span>
+<span class="key">export</span> <span class="val">ANTHROPIC_API_KEY</span>=<span class="val">"sk-local-dev-2025"</span>
+
+<span class="comment"># VSCode settings.json</span>
+{
+  <span class="key">"claude-code.apiHeaders"</span>: {
+    <span class="key">"X-API-Key"</span>: <span class="val">"rag-A7kX9mP2vQ8nR4wL6yT1bF3jH5sD0eK"</span>
+  }
+}</code></pre>
+  </div>
+
+  <div class="callout info">
+    <div class="callout-title">ANTHROPIC_API_KEY vs X-API-Key 差異</div>
+    <table style="margin:8px 0 0;">
+      <tr><th>變數</th><th>用途</th><th>來源</th></tr>
+      <tr><td><code>ANTHROPIC_API_KEY</code></td><td>LiteLLM Proxy 認證</td><td>Server <code>.env</code> 的 <code>LITELLM_MASTER_KEY</code>（團隊共用）</td></tr>
+      <tr><td><code>X-API-Key</code></td><td>RAG Proxy 身份驗證 + 專案路由</td><td>Server <code>config/api_keys.json</code>（每人不同）</td></tr>
+    </table>
+  </div>
+
+  <h4 style="margin:24px 0 8px;">臨時切換專案的 RAG Collection</h4>
+  <p>你的 API Key 綁定了預設專案（如 <code>xse-apps</code>）。若需要臨時切換到其他專案的 RAG 資料，加上 <code>X-Project-Id</code> header：</p>
+
+<pre><code>{
+  <span class="key">"claude-code.apiHeaders"</span>: {
+    <span class="key">"X-API-Key"</span>: <span class="val">"<span class="placeholder">rag-你的專屬Key</span>"</span>,
+    <span class="key">"X-Project-Id"</span>: <span class="val">"xse-api"</span>   <span class="comment">// 覆蓋 Key 預設的 project_id</span>
+  }
+}
+</code><span class="code-label">settings.json（開發機 VSCode）</span></pre>
+
+  <div class="callout info">
+    <div class="callout-title">不加 X-Project-Id 也完全沒問題</div>
+    RAG Proxy 會自動使用你 API Key 綁定的預設 <code>project_id</code>。只有需要跨專案工作時才需要手動覆蓋。
+  </div>
+</div>
+
+<!-- ====== Step 7: 驗證 ====== -->
+<div class="step">
+  <div class="step-badge">7</div>
+  <h3>重啟 VSCode 並驗證 <span class="on-client">在開發機上操作</span></h3>
+  <p>設定完成後，<strong>完全關閉並重新開啟 VSCode</strong>（確保環境變數被載入）。</p>
+
+  <p>開啟 Claude Code 面板，發送一條簡單訊息測試：</p>
+
+<pre><code><span class="comment">// 在 Claude Code 對話框中輸入：</span>
+<span class="val">Hello, 你是什麼模型？</span></code></pre>
+
+  <div class="callout success">
+    <div class="callout-title">驗證成功的跡象</div>
+    <ul>
+      <li>Claude Code 正常回應（但內容來自本地模型，風格可能與真正的 Claude 不同）</li>
+      <li>在 GPU Server 上執行 <code>./manage.sh logs rag-proxy</code> 能看到 <code>[auth]</code> 和 <code>[queue]</code> log</li>
+      <li>在 GPU Server 上執行 <code>./manage.sh logs litellm</code> 能看到請求被接收的 log</li>
+      <li>在 GPU Server 上 <code>nvidia-smi</code> 能看到 GPU 記憶體使用量上升</li>
+    </ul>
+  </div>
+
+  <div class="callout danger">
+    <div class="callout-title">如果無法連線，逐步排查</div>
+    <ul>
+      <li><strong>Step 1 &mdash; 網路</strong>：開發機能 ping 到 Server 嗎？ <code>ping <span class="ip-highlight">GPU_SERVER_IP</span></code></li>
+      <li><strong>Step 2 &mdash; Port</strong>：Port 4000 有開嗎？ <code>curl http://<span class="ip-highlight">GPU_SERVER_IP</span>:4000/health</code></li>
+      <li><strong>Step 3 &mdash; 服務</strong>：LiteLLM 在跑嗎？ 在 Server 上 <code>docker ps | grep litellm</code></li>
+      <li><strong>Step 4 &mdash; 環境變數</strong>：設定正確嗎？ <code>echo $ANTHROPIC_BASE_URL</code>（應顯示 Server IP）</li>
+      <li><strong>Step 5 &mdash; Master Key</strong>：<code>ANTHROPIC_API_KEY</code> 與 Server <code>.env</code> 的 <code>LITELLM_MASTER_KEY</code> 一致嗎？</li>
+      <li><strong>Step 6 &mdash; API Key</strong>：VSCode settings.json 的 <code>X-API-Key</code> 有在 Server <code>config/api_keys.json</code> 中且 <code>enabled: true</code>？</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ====== RAG 向量搜尋 ====== -->
+<div class="step">
+  <div class="step-badge">8</div>
+  <h3>啟用 RAG 向量搜尋（提升回應品質）<span class="on-server">在 GPU Server 上操作</span></h3>
+  <p>Stack 內建 <strong>Qdrant 向量資料庫 + RAG Proxy</strong>，能將你的 codebase 建立索引，讓本地模型在回答時自動參考相關程式碼片段。</p>
+
+  <div class="callout info">
+    <div class="callout-title">RAG 如何運作？</div>
+    Claude Code 發送請求 &rarr; <strong>RAG Proxy 攔截</strong> &rarr; 從問題中擷取語意 &rarr; 在 Qdrant 中搜尋相關程式碼 &rarr; 將檢索結果注入 system prompt &rarr; 轉發給 LiteLLM &rarr; 模型帶著上下文回答
+  </div>
+
+  <h4 style="margin:16px 0 8px;">Step 1：為每個專案建立獨立索引</h4>
+  <p>使用 <code>--project</code> 參數為每個專案建立獨立的向量 collection，實現 <strong>Per-project RAG 隔離</strong>（在 GPU Server 上執行）：</p>
+
+<pre><code><span class="comment"># 為前端專案建立索引 → collection: codebase-xse-apps</span>
+<span class="cmd">./manage.sh</span> <span class="flag">index</span> <span class="val">/path/to/xse-apps</span> <span class="flag">--project</span> <span class="val">xse-apps</span>
+
+<span class="comment"># 為後端專案建立索引 → collection: codebase-xse-api</span>
+<span class="cmd">./manage.sh</span> <span class="flag">index</span> <span class="val">/path/to/xse-api</span> <span class="flag">--project</span> <span class="val">xse-api</span>
+
+<span class="comment"># 也可以直接用 indexer.py（在容器中或本機）</span>
+<span class="cmd">python3</span> services/rag-proxy/indexer.py <span class="val">/path/to/xse-apps</span> <span class="flag">--project</span> <span class="val">xse-apps</span>
+</code><span class="code-label">GPU Server Terminal</span></pre>
+
+  <div class="callout info">
+    <div class="callout-title">Per-project Collection 命名規則</div>
+    <table style="margin:8px 0 0;">
+      <tr><th>指令</th><th>Qdrant Collection 名稱</th></tr>
+      <tr><td><code>--project xse-apps</code></td><td><code>codebase-xse-apps</code></td></tr>
+      <tr><td><code>--project xse-api</code></td><td><code>codebase-xse-api</code></td></tr>
+      <tr><td>無 <code>--project</code></td><td><code>codebase</code>（預設，向後相容）</td></tr>
+    </table>
+    <p style="margin-top:8px;"><strong>重要：</strong><code>--project</code> 名稱必須與 <code>api_keys.json</code> 中的 <code>project_id</code> 一致，RAG Proxy 才能自動路由到正確的 collection。</p>
+  </div>
+
+  <p>索引器會自動：</p>
+  <ul>
+    <li>掃描所有程式碼檔案（.py, .ts, .js, .vue, .go, .rs, .java 等 30+ 種）</li>
+    <li>跳過 node_modules, .git, dist, build 等目錄</li>
+    <li>將檔案切成 60 行一塊（10 行重疊）</li>
+    <li>用 <code>nomic-embed-text</code> 模型生成向量嵌入</li>
+    <li>存入 Qdrant 向量資料庫（per-project 獨立 collection）</li>
+  </ul>
+
+  <h4 style="margin:16px 0 8px;">Step 2：確認開發機環境變數</h4>
+  <p>如果你已在 Step 6 中設定 <code>ANTHROPIC_BASE_URL</code> 指向 <code>:4001</code>（RAG Proxy），則 RAG 已自動啟用。確認一下：</p>
+
+<pre><code><span class="comment"># 確認指向 RAG Proxy（Port 4001，非 4000）</span>
+<span class="cmd">echo</span> $ANTHROPIC_BASE_URL
+<span class="comment"># 應顯示：http://GPU_SERVER_IP:4001</span>
+</code><span class="code-label">開發機 Terminal</span></pre>
+
+  <div class="callout warn">
+    <div class="callout-title">Port 差異一覽</div>
+    <table style="margin:8px 0 0;">
+      <tr><th>Port</th><th>服務</th><th>用途</th></tr>
+      <tr><td><code>:4000</code></td><td>LiteLLM（直連）</td><td>不經過 RAG，直接路由到 Ollama</td></tr>
+      <tr><td><code>:4001</code></td><td>RAG Proxy</td><td>先搜尋 Qdrant，注入上下文後再轉發到 LiteLLM</td></tr>
+    </table>
+  </div>
+
+  <h4 style="margin:20px 0 10px;">:4000 vs :4001 使用情境比較</h4>
+  <p>兩個 Port 各有適合的場景，可依需求自由選擇：</p>
+
+  <div class="dual-col">
+    <div style="border-color: rgba(245, 158, 11, 0.4);">
+      <h4 style="color: var(--orange);">:4000 &mdash; LiteLLM 直連</h4>
+      <ul>
+        <li><strong>一般性程式問答</strong>：問語法、演算法、概念解釋等不需要專案上下文的問題</li>
+        <li><strong>快速回應優先</strong>：省去向量搜尋步驟，延遲更低、回應更快</li>
+        <li><strong>新專案 / 未建索引</strong>：尚未執行 <code>./manage.sh index</code> 時，用 :4001 也沒有 RAG 效果</li>
+        <li><strong>多輪通用對話</strong>：debug 思路、架構討論、寫 README 等與特定檔案無關的任務</li>
+        <li><strong>節省 GPU 資源</strong>：不觸發 embedding 模型，減少 VRAM 消耗</li>
+      </ul>
+    </div>
+    <div style="border-color: rgba(96, 165, 250, 0.4);">
+      <h4 style="color: var(--blue);">:4001 &mdash; RAG Proxy（推薦）</h4>
+      <ul>
+        <li><strong>閱讀/修改專案程式碼</strong>：「這個函式做了什麼？」「怎麼改這段邏輯？」模型會自動參考相關檔案</li>
+        <li><strong>跨檔案理解</strong>：問到元件之間的依賴、API 呼叫鏈等需要上下文的問題</li>
+        <li><strong>Code Review / 重構</strong>：RAG 注入相關程式碼片段，讓模型給出更精準的建議</li>
+        <li><strong>除錯排查</strong>：描述 bug 症狀，模型能搜尋到可能相關的程式碼區塊</li>
+        <li><strong>已建立索引的專案</strong>：執行過 <code>./manage.sh index</code> 後效果最佳</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <div class="callout-title">簡單判斷原則</div>
+    <strong>需要模型「知道你的程式碼」&rarr; 用 :4001</strong>；只是「通用問答」&rarr; 用 :4000 更快。<br>
+    如果不確定，<strong>預設用 :4001 即可</strong> &mdash; 即使沒有相關索引，RAG Proxy 也會正常轉發，只是不會額外注入上下文。
+  </div>
+
+  <h4 style="margin:20px 0 10px;">在 VSCode Claude Code 中自由切換 :4000 / :4001</h4>
+  <p>Claude Code 透過環境變數 <code>ANTHROPIC_BASE_URL</code> 決定連線端點，切換方式非常簡單：</p>
+
+  <details>
+    <summary>方法 1：Shell 別名快速切換（推薦）</summary>
+    <div class="inner">
+      <p>在 <code>~/.zshrc</code> 中加入以下 alias，之後用一行指令切換：</p>
+<pre><code><span class="comment"># ── LLM 模式切換 ─────────────────────────────────</span>
+<span class="comment"># 切到 RAG 模式（:4001，帶驗證 + 排隊 + 向量搜尋）</span>
+<span class="key">alias</span> <span class="val">llm-rag</span>=<span class="val">'export ANTHROPIC_BASE_URL="http://<span class="placeholder">GPU_SERVER_IP</span>:4001" && echo "已切換到 RAG 模式 (:4001)（需在 VSCode 設定 X-API-Key）"'</span>
+
+<span class="comment"># 切到直連模式（:4000，更快，不經 RAG/驗證）</span>
+<span class="key">alias</span> <span class="val">llm-direct</span>=<span class="val">'export ANTHROPIC_BASE_URL="http://<span class="placeholder">GPU_SERVER_IP</span>:4000" && echo "已切換到直連模式 (:4000)"'</span>
+
+<span class="comment"># 切回 Anthropic 雲端</span>
+<span class="key">alias</span> <span class="val">llm-cloud</span>=<span class="val">'unset ANTHROPIC_BASE_URL && export ANTHROPIC_API_KEY="sk-ant-你的Key" && echo "已切換到 Anthropic 雲端"'</span>
+
+<span class="comment"># 查看目前模式</span>
+<span class="key">alias</span> <span class="val">llm-mode</span>=<span class="val">'echo "ANTHROPIC_BASE_URL = ${ANTHROPIC_BASE_URL:-（未設定，使用 Anthropic 雲端）}"'</span>
+</code><span class="code-label">~/.zshrc（開發機）</span></pre>
+
+      <p>使用方式：</p>
+<pre><code><span class="comment"># 切換後需要重新載入 VSCode 視窗才會生效</span>
+<span class="cmd">llm-rag</span>       <span class="comment"># 切到 RAG 模式</span>
+<span class="cmd">llm-direct</span>    <span class="comment"># 切到直連模式</span>
+<span class="cmd">llm-cloud</span>     <span class="comment"># 切回雲端</span>
+<span class="cmd">llm-mode</span>      <span class="comment"># 查看目前連到哪裡</span>
+</code><span class="code-label">開發機 Terminal</span></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>方法 2：VSCode Tasks 一鍵切換</summary>
+    <div class="inner">
+      <p>在專案根目錄 <code>.vscode/tasks.json</code> 中加入切換任務，用 <code>Cmd+Shift+P</code> &rarr; "Tasks: Run Task" 快速切換：</p>
+<pre><code>{
+  <span class="key">"version"</span>: <span class="val">"2.0.0"</span>,
+  <span class="key">"tasks"</span>: [
+    {
+      <span class="key">"label"</span>: <span class="val">"LLM: RAG 模式 (:4001)"</span>,
+      <span class="key">"type"</span>: <span class="val">"shell"</span>,
+      <span class="key">"command"</span>: <span class="val">"export ANTHROPIC_BASE_URL='http://<span class="placeholder">GPU_SERVER_IP</span>:4001' && echo '已設定 RAG 模式，請重新載入視窗 (Cmd+Shift+P > Reload Window)'"</span>
+    },
+    {
+      <span class="key">"label"</span>: <span class="val">"LLM: 直連模式 (:4000)"</span>,
+      <span class="key">"type"</span>: <span class="val">"shell"</span>,
+      <span class="key">"command"</span>: <span class="val">"export ANTHROPIC_BASE_URL='http://<span class="placeholder">GPU_SERVER_IP</span>:4000' && echo '已設定直連模式，請重新載入視窗 (Cmd+Shift+P > Reload Window)'"</span>
+    }
+  ]
+}
+</code><span class="code-label">.vscode/tasks.json</span></pre>
+    </div>
+  </details>
+
+  <div class="callout warn">
+    <div class="callout-title">切換後需要重新載入 VSCode</div>
+    環境變數修改後，VSCode 的 Claude Code 擴充功能<strong>不會自動偵測變更</strong>。你需要：<br>
+    1. 在 Terminal 執行 alias 指令（如 <code>llm-rag</code>）或 <code>source ~/.zshrc</code><br>
+    2. 在 VSCode 中按 <code>Cmd+Shift+P</code> &rarr; <strong>"Developer: Reload Window"</strong> 重新載入視窗<br>
+    或者直接<strong>關閉再重開 VSCode</strong>，讓新的環境變數生效。
+  </div>
+
+  <h4 style="margin:16px 0 8px;">Step 3：確認 RAG 狀態</h4>
+
+<pre><code><span class="comment"># 查看 RAG Proxy + Qdrant 狀態</span>
+<span class="cmd">./manage.sh</span> <span class="flag">rag-status</span>
+</code><span class="code-label">GPU Server Terminal</span></pre>
+
+  <div class="callout success">
+    <div class="callout-title">RAG 的實際效果</div>
+    <ul>
+      <li>模型回答時會自動引用你 codebase 中的相關程式碼</li>
+      <li>對「這個函式做了什麼」「怎麼改這段 code」類型的問題改善最明顯</li>
+      <li>可用 <code>./manage.sh logs rag-proxy</code> 看到每次注入了多少 context</li>
+    </ul>
+  </div>
+
+  <div class="callout info">
+    <div class="callout-title">想暫時關閉 RAG？</div>
+    方法 1：把環境變數改回 <code>:4000</code>（跳過 RAG Proxy）<br>
+    方法 2：在 Server <code>.env</code> 中設定 <code>RAG_ENABLED=false</code> 後重啟 rag-proxy
+  </div>
+</div>
+
+<!-- ====== 日常管理 ====== -->
+<div class="step">
+  <div class="step-badge">9</div>
+  <h3>日常管理 &amp; 進階操作</h3>
+
+  <details>
+    <summary>manage.sh 指令速查 <span class="on-server">Server 端</span></summary>
+    <div class="inner">
+      <table>
+        <tr><th>指令</th><th>用途</th></tr>
+        <tr><td><code>./manage.sh setup</code></td><td>初始化環境檢查、建立 .env 設定檔</td></tr>
+        <tr><td><code>./manage.sh start</code></td><td>啟動所有服務</td></tr>
+        <tr><td><code>./manage.sh stop</code></td><td>停止所有服務</td></tr>
+        <tr><td><code>./manage.sh restart</code></td><td>重啟所有服務</td></tr>
+        <tr><td><code>./manage.sh status</code></td><td>查看服務狀態 + GPU 使用量</td></tr>
+        <tr><td><code>./manage.sh logs [service]</code></td><td>查看 log（可指定 ollama/litellm/rag-proxy 等）</td></tr>
+        <tr><td><code>./manage.sh list</code></td><td>列出已安裝的模型</td></tr>
+        <tr><td><code>./manage.sh pull &lt;model&gt;</code></td><td>下載新模型</td></tr>
+        <tr><td><code>./manage.sh remove-model &lt;model&gt;</code></td><td>刪除模型</td></tr>
+        <tr><td><code>./manage.sh index &lt;dir&gt; --project &lt;name&gt;</code></td><td>將目錄索引到 Qdrant（RAG 用）</td></tr>
+        <tr><td><code>./manage.sh rag-status</code></td><td>查看 RAG Proxy + Qdrant 狀態</td></tr>
+        <tr><td><code>./manage.sh test</code></td><td>測試 LiteLLM Proxy</td></tr>
+        <tr><td><code>./manage.sh vscode</code></td><td>顯示 VSCode 環境變數設定</td></tr>
+      </table>
+    </div>
+  </details>
+
+  <details>
+    <summary>使用 HTTPS 連線（跨網段時可選）</summary>
+    <div class="inner">
+      <p><strong>組織內部署通常不需要 HTTPS</strong>，直接用 HTTP 即可。若未來需要跨網段或對外開放，Stack 包含 Nginx SSL 反向代理：</p>
+<pre><code><span class="comment"># 1. 取消 docker-compose.yml 中 nginx 區塊的註解</span>
+<span class="comment"># 2. 產生 SSL 憑證</span>
+<span class="cmd">./scripts/generate_ssl.sh</span>
+<span class="cmd">./manage.sh</span> <span class="flag">restart</span>
+</code><span class="code-label">GPU Server</span></pre>
+
+      <p>然後在開發機改用 HTTPS 端點：</p>
+<pre><code><span class="key">export</span> <span class="val">ANTHROPIC_BASE_URL</span>=<span class="val">"https://<span class="placeholder">GPU_SERVER_IP</span>:443"</span>
+</code><span class="code-label">開發機 ~/.zshrc</span></pre>
+
+      <div class="callout warn">
+        <div class="callout-title">自簽憑證注意</div>
+        使用自簽憑證時，需在開發機設定環境變數 <code>NODE_TLS_REJECT_UNAUTHORIZED=0</code>，或將自簽 CA 加入系統信任清單。
+      </div>
+    </div>
+  </details>
+
+  <details>
+    <summary>使用固定 IP 或 Hostname</summary>
+    <div class="inner">
+      <p>為避免 Server 重啟後 IP 變動，建議：</p>
+      <ul>
+        <li><strong>方法 1：</strong>在路由器上為 GPU Server 設定 DHCP 保留（固定 IP）</li>
+        <li><strong>方法 2：</strong>在 Server 上設定靜態 IP</li>
+        <li><strong>方法 3：</strong>在開發機的 <code>/etc/hosts</code> 加入對應：</li>
+      </ul>
+<pre><code><span class="comment"># /etc/hosts（開發機）</span>
+<span class="val">192.168.1.100</span>    <span class="key">llm-server</span></code></pre>
+      <p>之後環境變數可以寫成：</p>
+<pre><code><span class="key">export</span> <span class="val">ANTHROPIC_BASE_URL</span>=<span class="val">"http://llm-server:4000"</span></code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>切換回 Anthropic 雲端 API <span class="on-client">開發機端</span></summary>
+    <div class="inner">
+      <p>只需移除或註解掉環境變數：</p>
+<pre><code><span class="comment"># 暫時切換回雲端</span>
+<span class="key">unset</span> ANTHROPIC_BASE_URL
+<span class="key">export</span> <span class="val">ANTHROPIC_API_KEY</span>=<span class="val">"sk-ant-你的真正Anthropic-Key"</span></code></pre>
+      <p>重啟 VSCode 後即會連到 Anthropic 雲端。想切回本地 Server，再 <code>source ~/.zshrc</code> 即可。</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>如何新增模型 <span class="on-server">Server 端</span></summary>
+    <div class="inner">
+      <p>1. 在 GPU Server 上下載模型：</p>
+<pre><code><span class="cmd">./manage.sh</span> <span class="flag">pull</span> <span class="val">qwen2.5:14b</span></code></pre>
+
+      <p>2. 在 <code>config/litellm_config.yaml</code> 中新增：</p>
+<pre><code>  - <span class="key">model_name</span>: <span class="val">qwen2.5-14b</span>
+    <span class="key">litellm_params</span>:
+      <span class="key">model</span>: <span class="val">ollama/qwen2.5:14b</span>
+      <span class="key">api_base</span>: <span class="val">http://ollama:11434</span>
+      <span class="key">timeout</span>: <span class="val">300</span></code></pre>
+
+      <p>3. 重啟 LiteLLM：<code>docker compose restart litellm</code></p>
+    </div>
+  </details>
+
+  <details>
+    <summary>多人共用同一台 GPU Server（5+ 人團隊）</summary>
+    <div class="inner">
+      <p>Stack 內建三層多人隔離機制，支援 5 人以上團隊同時使用：</p>
+
+      <h4 style="margin:14px 0 8px;">1. API Key 驗證（身份識別）</h4>
+      <ul>
+        <li>每位成員有專屬 <code>X-API-Key</code>，綁定 <code>user_id</code> 和預設 <code>project_id</code></li>
+        <li>沒有有效 Key 的請求會被 RAG Proxy 擋下（回傳 <code>401</code>）</li>
+        <li>管理員可即時停用 Key（編輯 <code>config/api_keys.json</code>，設 <code>enabled: false</code>）</li>
+        <li>Hot Reload：修改 Key 檔案不需重啟服務</li>
+      </ul>
+
+      <h4 style="margin:14px 0 8px;">2. Per-project RAG Collection（上下文隔離）</h4>
+      <ul>
+        <li>每個專案有獨立的 Qdrant 向量 collection（如 <code>codebase-xse-apps</code>、<code>codebase-xse-api</code>）</li>
+        <li>RAG Proxy 根據 API Key 的 <code>project_id</code> 自動路由到對應 collection</li>
+        <li>成員可用 <code>X-Project-Id</code> header 臨時切換到其他專案的 collection</li>
+        <li>不同專案的向量搜尋結果互不干擾</li>
+      </ul>
+
+      <h4 style="margin:14px 0 8px;">3. GPU 請求排隊（資源保護）</h4>
+      <ul>
+        <li>RAG Proxy 使用 Semaphore 限制同時送往 GPU 的推理請求數（預設 <code>MAX_CONCURRENT_REQUESTS=3</code>）</li>
+        <li>超過上限的請求自動排隊等待，不會直接報錯</li>
+        <li>排隊超過 <code>QUEUE_TIMEOUT</code>（預設 300 秒）才回傳 <code>429</code></li>
+        <li>可用 <code>curl http://GPU_SERVER_IP:4001/queue/status</code> 查看即時排隊狀態</li>
+      </ul>
+
+      <h4 style="margin:14px 0 8px;">管理員快速上手</h4>
+
+<pre><code><span class="comment"># 為新成員產生 Key</span>
+<span class="cmd">python3</span> <span class="flag">-c</span> <span class="val">"import secrets; print(f'rag-{secrets.token_urlsafe(32)}')"</span>
+
+<span class="comment"># 將 Key 加入 config/api_keys.json（不需重啟）</span>
+<span class="cmd">vim</span> config/api_keys.json
+
+<span class="comment"># 為新專案建立 RAG 索引</span>
+<span class="cmd">./manage.sh</span> <span class="flag">index</span> <span class="val">/path/to/new-project</span> <span class="flag">--project</span> <span class="val">new-project</span>
+
+<span class="comment"># 查看排隊狀態</span>
+<span class="cmd">curl</span> <span class="val">http://localhost:4001/queue/status</span>
+
+<span class="comment"># 查看誰在使用（log 中顯示 user_id）</span>
+<span class="cmd">./manage.sh</span> <span class="flag">logs</span> <span class="val">rag-proxy</span> <span class="flag">| grep</span> <span class="val">"[queue]"</span>
+</code><span class="code-label">GPU Server Terminal</span></pre>
+
+      <h4 style="margin:14px 0 8px;">建議的 .env 參數（5+ 人）</h4>
+      <table>
+        <tr><th>參數</th><th>建議值</th><th>說明</th></tr>
+        <tr><td><code>OLLAMA_NUM_PARALLEL</code></td><td><code>4</code></td><td>Ollama 並行推理數</td></tr>
+        <tr><td><code>OLLAMA_MAX_LOADED</code></td><td><code>2</code></td><td>同時載入模型數（避免 VRAM OOM）</td></tr>
+        <tr><td><code>OLLAMA_KEEP_ALIVE</code></td><td><code>4h</code></td><td>縮短模型保留時間，釋放 VRAM</td></tr>
+        <tr><td><code>MAX_CONCURRENT_REQUESTS</code></td><td><code>3</code></td><td>RAG Proxy 同時轉發上限</td></tr>
+        <tr><td><code>QUEUE_TIMEOUT</code></td><td><code>300</code></td><td>排隊逾時秒數</td></tr>
+      </table>
+
+      <div class="callout warn">
+        <div class="callout-title">團隊建議：約定標準模型</div>
+        建議團隊統一使用 <code>nemotron-super</code>（16GB）作為主力模型。避免有人載入 <code>nemotron-70b</code>（40GB）佔滿 VRAM，導致其他人無法使用。
+      </div>
+    </div>
+  </details>
+</div>
+
+<!-- ====== Troubleshooting ====== -->
+<div class="step">
+  <div class="step-badge">10</div>
+  <h3>常見問題排除</h3>
+
+  <table>
+    <tr><th style="min-width:220px;">問題</th><th>解決方式</th></tr>
+    <tr>
+      <td><strong>connection refused / timeout</strong></td>
+      <td>1. 確認 Server 服務在跑：<code>docker ps</code><br>2. 確認防火牆開放 4000 port<br>3. 確認不是 <code>localhost</code> 而是 Server IP</td>
+    </tr>
+    <tr>
+      <td><strong>Claude Code 顯示 API Key 無效</strong></td>
+      <td>確認 <code>ANTHROPIC_API_KEY</code> 與 Server 上 <code>.env</code> 中的 <code>LITELLM_MASTER_KEY</code> 完全一致</td>
+    </tr>
+    <tr>
+      <td><strong>401 authentication_error</strong></td>
+      <td>RAG Proxy 的 <code>X-API-Key</code> 驗證失敗。確認：<br>1. VSCode settings.json 中 <code>claude-code.apiHeaders</code> 有設 <code>X-API-Key</code><br>2. Key 存在於 Server <code>config/api_keys.json</code> 且 <code>enabled: true</code></td>
+    </tr>
+    <tr>
+      <td><strong>429 rate_limit_error / GPU queue full</strong></td>
+      <td>GPU 排隊已滿且等待逾時。可能原因：<br>1. 太多人同時使用 &mdash; 稍等再試<br>2. 有人在跑大模型(70B)佔用 GPU 時間過長<br>3. 調高 <code>MAX_CONCURRENT_REQUESTS</code> 或 <code>QUEUE_TIMEOUT</code></td>
+    </tr>
+    <tr>
+      <td><strong>連線極慢 / 頻繁超時</strong></td>
+      <td>1. 大模型首次載入 VRAM 需要時間<br>2. 檢查 Server 與開發機是否在同一子網<br>3. 嘗試改用較小模型（如 nemotron-nano）</td>
+    </tr>
+    <tr>
+      <td><strong>CUDA out of memory</strong></td>
+      <td>在 Server 上用 <code>./manage.sh status</code> 查看 VRAM。減少 <code>OLLAMA_MAX_LOADED_MODELS</code> 或改用較小模型</td>
+    </tr>
+    <tr>
+      <td><strong>Server IP 變動導致連不上</strong></td>
+      <td>設定固定 IP 或使用 <code>/etc/hosts</code> hostname（見上方「使用固定 IP 或 Hostname」）</td>
+    </tr>
+    <tr>
+      <td><strong>HTTPS 憑證錯誤（啟用 SSL 時）</strong></td>
+      <td>內部部署建議直接用 HTTP。若已啟用 HTTPS，自簽憑證需設定 <code>NODE_TLS_REJECT_UNAUTHORIZED=0</code></td>
+    </tr>
+    <tr>
+      <td><strong>LiteLLM 報 "model not found"</strong></td>
+      <td>在 Server 上確認模型已下載：<code>./manage.sh list</code></td>
+    </tr>
+    <tr>
+      <td><strong>回應品質不佳</strong></td>
+      <td>本地模型能力有限，建議至少使用 <code>nemotron-super</code> (12B) 以上。啟用 RAG 可進一步改善</td>
+    </tr>
+    <tr>
+      <td><strong>RAG 沒有注入 context</strong></td>
+      <td>1. 確認已執行 <code>./manage.sh index</code> 建立索引<br>2. 確認 <code>ANTHROPIC_BASE_URL</code> 指向 <code>:4001</code> 而非 <code>:4000</code><br>3. 查看 <code>./manage.sh rag-status</code> 確認 Qdrant 有資料</td>
+    </tr>
+    <tr>
+      <td><strong>RAG Proxy 報錯</strong></td>
+      <td>查看 <code>./manage.sh logs rag-proxy</code>。常見原因：embedding 模型未下載（<code>./manage.sh pull nomic-embed-text</code>）</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ====== Quick Reference ====== -->
+<div class="step" style="background: linear-gradient(135deg, var(--surface) 0%, #1a2332 100%);">
+  <h3>快速參考卡</h3>
+  <p>設定完成後的日常流程：</p>
+
+  <div class="dual-col">
+    <div style="border-color: rgba(74, 222, 128, 0.3);">
+      <h4 style="color: var(--green);">🎮 GPU Server</h4>
+<pre style="border:none; margin:8px 0 0;"><code><span class="comment"># 啟動 Stack</span>
+<span class="cmd">cd</span> ~/local-llm-stack
+<span class="cmd">./manage.sh</span> <span class="flag">start</span>
+
+<span class="comment"># 查看狀態</span>
+<span class="cmd">./manage.sh</span> <span class="flag">status</span>
+
+<span class="comment"># 收工</span>
+<span class="cmd">./manage.sh</span> <span class="flag">stop</span></code></pre>
+    </div>
+    <div style="border-color: rgba(124, 106, 239, 0.3);">
+      <h4 style="color: var(--accent-light);">💻 開發機</h4>
+<pre style="border:none; margin:8px 0 0;"><code><span class="comment"># 確認環境變數（寫入 ~/.zshrc 後自動生效）</span>
+<span class="cmd">echo</span> $ANTHROPIC_BASE_URL
+<span class="comment"># 應顯示 http://GPU_SERVER_IP:4001（RAG）</span>
+
+<span class="comment"># VSCode settings.json 需設定 X-API-Key</span>
+<span class="comment"># "claude-code.apiHeaders": { "X-API-Key": "rag-..." }</span>
+
+<span class="comment"># 開啟 VSCode，直接使用 Claude Code</span>
+<span class="cmd">code</span> <span class="val">.</span></code></pre>
+    </div>
+  </div>
+</div>
+
+</div><!-- .container -->
+
+<div class="footer">
+  Local LLM Stack Guide (跨主機 + RAG + 多人隔離版) &mdash; 依據 <code>local-llm-stack</code> 專案配置自動產生<br>
+  架構：開發機 (VSCode + X-API-Key) &harr; GPU Server (RAG Proxy [Auth + Queue] + Qdrant + LiteLLM + Ollama + Open WebUI)
+</div>
+
+</body>
+</html>
