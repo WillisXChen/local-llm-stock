@@ -134,7 +134,8 @@ services:
 
   # ── Model Puller：自動拉取預設模型（一次性服務）─────────
   model-puller:
-    image: ollama/ollama:latest
+    build: ./services/model-puller
+    image: local-llm-stack/model-puller:latest
     container_name: model-puller
     restart: "no"                           # 只執行一次
     volumes:
