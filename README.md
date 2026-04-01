@@ -1,7 +1,23 @@
-# Local LLM Stack — 48GB GPU Edition
+# Local LLM Stack — NVIDIA L40S Edition
 
 VSCode Claude Code Plugin x 本地 LLM 完整部署包
 支援 NVIDIA Nemotron + Google Gemma，多人隔離 + RAG 向量搜尋 + GPU 請求排隊。
+
+---
+
+## 硬體規格
+
+| 項目 | 規格 |
+|------|------|
+| GPU | NVIDIA L40S — 46GB VRAM |
+| CUDA | 13.0 |
+| Driver | 580.126.09 |
+| CPU | 12 核心 |
+| RAM | 62.8 GB |
+| Swap | 8 GB |
+| OS | Linux (Kubernetes node, Longhorn storage) |
+
+> L40S 的 46GB VRAM 可同時載入一個 ~40GB 旗艦模型，或兩個中型模型（如 nemotron-super 16GB + embedding model）。
 
 ---
 
@@ -86,7 +102,7 @@ chmod +x manage.sh
 
 ```bash
 nvidia-smi
-# 應顯示 GPU 型號和 48GB VRAM
+# 應顯示 NVIDIA L40S 和 46GB VRAM
 
 docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi
 # 應顯示相同結果（確認 Docker GPU 存取正常）
@@ -339,7 +355,7 @@ curl -s http://GPU_SERVER_IP:4001/health
 
 ---
 
-## 模型清單（48GB VRAM）
+## 模型清單（46GB VRAM — L40S）
 
 ### NVIDIA Nemotron
 

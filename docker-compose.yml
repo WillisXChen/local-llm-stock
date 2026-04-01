@@ -1,5 +1,5 @@
 # ============================================================
-#  Local LLM Stack — 48GB GPU Edition
+#  Local LLM Stack — NVIDIA L40S (46 GB VRAM) Edition
 #  Services: Ollama + LiteLLM Proxy + Open WebUI (UI管理)
 #  VSCode Claude Code 透過 LiteLLM 串接本地模型
 # ============================================================
