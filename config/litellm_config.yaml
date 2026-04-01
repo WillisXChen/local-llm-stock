@@ -17,30 +17,30 @@ model_list:
       api_base: http://ollama:11434
       timeout: 120
 
-  # ── Nemotron 3 Super（12B active，~16GB，主力推薦）─────
-  - model_name: nemotron-super
-    litellm_params:
-      model: ollama/nemotron-3-super
-      api_base: http://ollama:11434
-      timeout: 300
+  # ── Nemotron 3 Super（需 42GB RAM，目前記憶體不足，已停用）
+  # - model_name: nemotron-super
+  #   litellm_params:
+  #     model: ollama/nemotron-3-super
+  #     api_base: http://ollama:11434
+  #     timeout: 300
 
-  # ── Nemotron 70B（~40GB，旗艦通用）─────────────────────
-  - model_name: nemotron-70b
-    litellm_params:
-      model: ollama/nemotron
-      api_base: http://ollama:11434
-      timeout: 600
+  # ── Nemotron 70B（未安裝，已停用）
+  # - model_name: nemotron-70b
+  #   litellm_params:
+  #     model: ollama/nemotron
+  #     api_base: http://ollama:11434
+  #     timeout: 600
 
   # ╔══════════════════════════════════════════════════════╗
   # ║  Google Gemma / CodeGemma 系列                       ║
   # ╚══════════════════════════════════════════════════════╝
 
-  # ── CodeGemma 2B（~2GB，極輕量補全）────────────────────
-  - model_name: codegemma-2b
-    litellm_params:
-      model: ollama/codegemma:2b
-      api_base: http://ollama:11434
-      timeout: 60
+  # ── CodeGemma 2B（未安裝，已停用）
+  # - model_name: codegemma-2b
+  #   litellm_params:
+  #     model: ollama/codegemma:2b
+  #     api_base: http://ollama:11434
+  #     timeout: 60
 
   # ── CodeGemma 7B（~6GB，Python/JS 專用）────────────────
   - model_name: codegemma-7b
@@ -68,12 +68,12 @@ model_list:
   # ║  Claude Code Plugin 預設呼叫這些 model name          ║
   # ╚══════════════════════════════════════════════════════╝
 
-  # 預設 Sonnet → 路由到 nemotron-super（最佳 coding 品質）
+  # 預設 Sonnet → 路由到 gemma2:27b（目前可用的最強模型）
   - model_name: claude-sonnet-4-5
     litellm_params:
-      model: ollama/nemotron-3-super
+      model: ollama/gemma2:27b
       api_base: http://ollama:11434
-      timeout: 300
+      timeout: 600
 
   # Haiku → 路由到 nemotron-nano（快速回應）
   - model_name: claude-haiku-4-5-20251001
@@ -82,10 +82,10 @@ model_list:
       api_base: http://ollama:11434
       timeout: 120
 
-  # Opus → 路由到 nemotron-70b（最高品質任務）
+  # Opus → 路由到 gemma2:27b（目前可用的最強模型）
   - model_name: claude-opus-4-6
     litellm_params:
-      model: ollama/nemotron
+      model: ollama/gemma2:27b
       api_base: http://ollama:11434
       timeout: 600
 
@@ -95,11 +95,12 @@ model_list:
   # ╚══════════════════════════════════════════════════════╝
 
   # 備援 Sonnet（本地掛掉時自動切換到 Anthropic Cloud）
-  - model_name: claude-sonnet-4-5-fallback
-    litellm_params:
-      model: claude-sonnet-4-5
-      api_key: os.environ/ANTHROPIC_API_KEY
-      timeout: 60
+  # 需在 .env 設定有效的 ANTHROPIC_API_KEY 才會啟用
+  # - model_name: claude-sonnet-4-5-fallback
+  #   litellm_params:
+  #     model: claude-sonnet-4-5
+  #     api_key: os.environ/ANTHROPIC_API_KEY
+  #     timeout: 60
 
 # ── 全域路由設定（5+ 人多人使用優化）───────────────────────
 router_settings:

@@ -161,7 +161,7 @@ cmd_test() {
     -H "x-api-key: ${KEY}" \
     -H "Content-Type: application/json" \
     -d '{
-      "model": "nemotron-super",
+      "model": "nemotron-nano",
       "max_tokens": 80,
       "messages": [{"role": "user", "content": "用一句話介紹你自己"}]
     }' | python3 -c "
