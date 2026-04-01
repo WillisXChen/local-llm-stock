@@ -56,10 +56,17 @@ model_list:
       api_base: http://ollama:11434
       timeout: 180
 
-  # ── Gemma 2 27B（~18GB，高品質通用）────────────────────
-  - model_name: gemma2-27b
+  # ── Gemma 2 27B（已被 Gemma 3 取代，停用）
+  # - model_name: gemma2-27b
+  #   litellm_params:
+  #     model: ollama/gemma2:27b
+  #     api_base: http://ollama:11434
+  #     timeout: 600
+
+  # ── Gemma 3 27B INT4（~20GB，主力模型）────────────────
+  - model_name: gemma3-27b
     litellm_params:
-      model: ollama/gemma2:27b
+      model: ollama/gemma3:27b
       api_base: http://ollama:11434
       timeout: 600
 
@@ -68,10 +75,10 @@ model_list:
   # ║  Claude Code Plugin 預設呼叫這些 model name          ║
   # ╚══════════════════════════════════════════════════════╝
 
-  # 預設 Sonnet → 路由到 gemma2:27b（目前可用的最強模型）
+  # 預設 Sonnet → 路由到 gemma3:27b（主力模型）
   - model_name: claude-sonnet-4-5
     litellm_params:
-      model: ollama/gemma2:27b
+      model: ollama/gemma3:27b
       api_base: http://ollama:11434
       timeout: 600
 
@@ -82,10 +89,10 @@ model_list:
       api_base: http://ollama:11434
       timeout: 120
 
-  # Opus → 路由到 gemma2:27b（目前可用的最強模型）
+  # Opus → 路由到 gemma3:27b（主力模型）
   - model_name: claude-opus-4-6
     litellm_params:
-      model: ollama/gemma2:27b
+      model: ollama/gemma3:27b
       api_base: http://ollama:11434
       timeout: 600
 
