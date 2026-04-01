@@ -26,12 +26,6 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
     networks:
       - llm-net
 
@@ -50,14 +44,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-placeholder}      # 可選：備援用 OpenAI
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-placeholder} # 可選：備援用 Anthropic Cloud
     depends_on:
-      ollama:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      - ollama
     networks:
       - llm-net
 
@@ -110,12 +97,6 @@ services:
       - qdrant_data:/qdrant/storage
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
     networks:
       - llm-net
 
@@ -146,10 +127,8 @@ services:
       - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS:-3}  # 同時推理上限
       - QUEUE_TIMEOUT=${QUEUE_TIMEOUT:-300}                    # 排隊逾時(秒)
     depends_on:
-      litellm:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
+      - litellm
+      - qdrant
     networks:
       - llm-net
 
@@ -165,8 +144,7 @@ services:
     environment:
       - OLLAMA_HOST=http://ollama:11434
     depends_on:
-      ollama:
-        condition: service_healthy
+      - ollama
     deploy:
       resources:
         reservations:
